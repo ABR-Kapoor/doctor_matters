@@ -1,0 +1,505 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Noto+Sans+Devanagari:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Base Colors - Professional Blue Theme (60-30-10) */
+    --background: 214 100% 97%;   /* #EFF6FF - light blue-white (60%) */
+    --foreground: 217 72% 17%;    /* Deep blue-gray for text */
+
+    /* Primary - Brand blue */
+    --primary: 217 91% 60%;       /* #3B82F6 (Blue-500) */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Light blue surfaces */
+    --secondary: 214 95% 93%;     /* #DBEAFE (Blue-100) */
+    --secondary-foreground: 217 72% 35%;
+
+    /* Muted */
+    --muted: 214 80% 95%;
+    --muted-foreground: 217 40% 50%;
+
+    /* Accent */
+    --accent: 214 100% 97%;       /* #EFF6FF (Blue-50) */
+    --accent-foreground: 217 72% 25%;
+
+    /* Card */
+    --card: 0 0% 100%;
+    --card-foreground: 217 72% 17%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 217 72% 17%;
+
+    /* Semantic Colors */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 80% 88%;        /* #BFDBFE (Blue-200) */
+    --input: 214 80% 88%;
+    --ring: 217 91% 60%;
+
+    --radius: 1.5rem;
+
+    /* Chart colors - blue family */
+    --chart-1: 217 91% 60%;
+    --chart-2: 214 80% 50%;
+    --chart-3: 217 72% 40%;
+    --chart-4: 214 60% 70%;
+    --chart-5: 217 50% 80%;
+
+    /* Sidebar */
+    --sidebar: 214 100% 97%;
+    --sidebar-foreground: 217 72% 17%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 95% 93%;
+    --sidebar-accent-foreground: 217 72% 25%;
+    --sidebar-border: 214 80% 88%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Design tokens */
+    --font-display: 'DM Serif Display', Georgia, serif;
+    --font-body: 'DM Sans', 'Noto Sans Devanagari', 'Noto Sans', system-ui, sans-serif;
+    --font-hindi: 'Noto Sans Devanagari', 'DM Sans', system-ui, sans-serif;
+
+    /* Radius tokens */
+    --radius-sm: 0.5rem;
+    --radius-md: 0.875rem;
+    --radius-lg: 1.25rem;
+    --radius-xl: 1.75rem;
+    --radius-2xl: 2.5rem;
+    --radius-full: 9999px;
+
+    /* Shadow system — ultra-subtle */
+    --shadow-sm:  0 1px 2px rgba(0,0,0,0.02);
+    --shadow-md:  0 2px 8px rgba(0,0,0,0.04);
+    --shadow-lg:  0 4px 16px rgba(0,0,0,0.06);
+    --shadow-xl:  0 8px 24px rgba(0,0,0,0.08);
+  }
+
+  .dark {
+    --background: 217 72% 10%;
+    --foreground: 214 100% 97%;
+    --card: 217 40% 13%;
+    --card-foreground: 214 100% 97%;
+    --popover: 217 40% 13%;
+    --popover-foreground: 214 100% 97%;
+    --primary: 217 91% 70%;
+    --primary-foreground: 217 72% 10%;
+    --secondary: 217 40% 20%;
+    --secondary-foreground: 214 100% 97%;
+    --muted: 217 40% 20%;
+    --muted-foreground: 214 60% 65%;
+    --accent: 217 40% 20%;
+    --accent-foreground: 214 100% 97%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 40% 25%;
+    --input: 217 40% 25%;
+    --ring: 217 91% 70%;
+  }
+}
+
+html { scroll-behavior: smooth !important; }
+
+@layer base {
+  html {
+    font-size: 16px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    background-color: #EFF6FF;
+    @apply text-foreground min-h-screen text-base antialiased;
+    font-family: var(--font-body);
+    font-size: 1rem;
+  }
+
+  /* Base Hindi/Devanagari Text Styling */
+  [lang="hi"],
+  .hindi-text,
+  .devanagari {
+    font-family: 'Noto Sans Devanagari', 'Noto Sans', system-ui, sans-serif;
+    font-feature-settings: "liga" 1, "clig" 1;
+    -webkit-font-feature-settings: "liga" 1, "clig" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Hindi names - slightly heavier weight */
+  .hindi-name {
+    font-family: 'Noto Sans Devanagari', system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  /* CRITICAL: Inherit font-weight from parent - NEVER hardcode it */
+  .devanagari-hindi {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    /* NO font-weight property - inherits from parent */
+  }
+}
+
+@layer components {
+
+  /* ─── Typography scale ───────────────────────────── */
+  .display-lg {
+    font-family: var(--font-display);
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    line-height: 1.1;
+  }
+  .display-md {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.1;
+  }
+  .headline-lg {
+    font-family: var(--font-display);
+    font-size: clamp(1.875rem, 4vw, 2.75rem);
+    line-height: 1.15;
+  }
+  .headline-md {
+    font-family: var(--font-display);
+    font-size: clamp(1.375rem, 2.5vw, 1.75rem);
+    line-height: 1.2;
+  }
+  .title-lg {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .body-lg {
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+  .body-md {
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  .label-lg {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .label-md {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* ─── Card system ────────────────────────────────── */
+
+  /* Primary card style — clean white */
+  .card-base {
+    @apply bg-white border border-blue-100 rounded-[1.75rem]
+           shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]
+           transition-shadow duration-200;
+  }
+
+  /* Editorial card — interactive, lift on hover */
+  .editorial-card {
+    @apply bg-white border border-blue-100 rounded-[1.75rem]
+           hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5
+           transition-all duration-200;
+  }
+
+  /* Flat surface card */
+  .card-flat {
+    @apply bg-blue-50 border border-blue-100 rounded-[1.75rem];
+  }
+
+  /* Large card */
+  .card-lg {
+    @apply bg-white border border-blue-100 rounded-[2.5rem]
+           shadow-[var(--shadow-md)];
+  }
+
+  /* Glass panel — sidebar only */
+  .glass-panel {
+    @apply bg-white border border-blue-100 rounded-[2rem];
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Legacy aliases kept for compatibility */
+  .glass-card { @apply card-base; }
+  .glass-card-solid { @apply card-base; }
+  .hover-card { @apply editorial-card; }
+  .section-card { @apply card-base; }
+  .stat-card { @apply card-base; }
+
+  /* ─── Pill badge ─────────────────────────────────── */
+  .pill-badge {
+    @apply gap-1 px-3 py-1 rounded-full
+           bg-blue-50 text-blue-700 border border-blue-200;
+    display: inline-flex !important;
+    align-items: center !important;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .pill-badge svg {
+    flex-shrink: 0;
+    display: block;
+    align-self: center;
+  }
+
+  /* ─── Buttons ────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-6 py-3 rounded-full
+           bg-blue-600 text-white font-semibold text-sm
+           hover:bg-blue-700 hover:-translate-y-px transition-all duration-200;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-6 py-3 rounded-full
+           bg-blue-100 text-blue-700 border border-blue-200 font-semibold text-sm
+           hover:bg-blue-200 hover:border-blue-300 transition-all duration-200;
+  }
+
+  /* ─── Utilities ──────────────────────────────────── */
+  .smooth-transition {
+    transition: all 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .glass-nav {
+    background: rgba(239, 246, 255, 0.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 0.8px solid rgb(191, 219, 254);
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent;
+  }
+
+  .page-header {
+    @apply flex flex-col gap-1 mb-8;
+  }
+
+  /* Sidebar nav link */
+  .sidebar-link {
+    @apply flex items-center space-x-4 px-6 py-3.5 rounded-2xl transition-all duration-200 text-gray-600 font-medium hover:bg-blue-50;
+  }
+
+  .sidebar-link-active {
+    @apply bg-blue-700 text-white shadow-lg shadow-blue-900/10 font-medium;
+  }
+
+  /* Dashboard grid helper */
+  .dashboard-grid {
+    @apply grid gap-6;
+    grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  }
+
+  /* Misc */
+  .bg-blue-theme {
+    @apply bg-blue-50;
+  }
+  .bg-gradient-radial {
+    background: radial-gradient(circle at center, var(--tw-gradient-stops));
+  }
+  .green-gradient-card {
+    @apply bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 text-blue-900 rounded-[2rem];
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-blue-200/50 rounded-full hover:bg-blue-300/50 transition-colors;
+}
+
+/* Utilities for text */
+.text-label {
+  @apply text-sm text-gray-500 font-medium;
+}
+.text-value {
+  @apply text-2xl font-bold text-gray-800;
+}
+
+/* ─── Custom Magnetic Cursor ────────────────────────── */
+#cursor-outer, #cursor-inner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 2147483647;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+#cursor-outer {
+  width: 35px;
+  height: 35px;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  transition: width 0.3s cubic-bezier(0.23, 1, 0.32, 1), 
+              height 0.3s cubic-bezier(0.23, 1, 0.32, 1), 
+              background-color 0.3s ease,
+              border-color 0.3s ease,
+              opacity 0.3s ease;
+}
+
+#cursor-inner {
+  width: 6px;
+  height: 6px;
+  background-color: #3b82f6;
+  transition: width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+}
+
+/* Show cursor once moved */
+body:has(#cursor-outer) {
+  cursor: none;
+}
+body:has(#cursor-outer) a, 
+body:has(#cursor-outer) button {
+  cursor: none;
+}
+
+/* Force hide cursor on Clerk modals */
+body.custom-cursor-active .cl-rootBox,
+body.custom-cursor-active .cl-rootBox *,
+body.custom-cursor-active [class*="cl-"] {
+  cursor: none !important;
+}
+
+/* Force Clerk modal below custom cursor */
+.cl-modalBackdrop,
+.cl-rootBox,
+[class*="cl-modal"] {
+  z-index: 99999 !important;
+}
+
+/* Hover States on Body */
+.cursor-hover #cursor-outer {
+  width: 60px;
+  height: 60px;
+  background-color: rgba(59, 130, 246, 0.08);
+  border-color: #3b82f6;
+}
+
+.cursor-image #cursor-outer {
+  width: 100px;
+  height: 100px;
+  background-color: rgba(59, 130, 246, 0.1);
+  border-style: dashed;
+}
+
+.cursor-heading #cursor-outer {
+  width: 120px;
+  height: 120px;
+  background-color: white;
+  mix-blend-mode: difference;
+  border: none;
+}
+.cursor-heading #cursor-inner {
+  opacity: 0;
+}
+
+/* Mouse Down compression */
+.cursor-active #cursor-outer {
+  transform: translate(-50%, -50%) scale(0.85);
+}
+
+/* Global cursor hide utility */
+@media (pointer: fine) {
+  .custom-cursor-active #cursor-outer,
+  .custom-cursor-active #cursor-inner {
+    opacity: 1;
+  }
+}
+@media (pointer: coarse) {
+  #cursor-outer, #cursor-inner {
+    display: none !important;
+  }
+}
+
+/* ─── Hindi/Devanagari Typography Fixes ────────────────────────── */
+/*
+ * Devanagari script needs:
+ *   1. letter-spacing: 0  — any spacing breaks conjunct characters
+ *   2. text-transform: none — script has no uppercase/lowercase concept
+ *   3. NO font-size overrides — the existing scale works fine; em-based
+ *      overrides compound and make everything enormous
+ */
+
+/* Zero letter-spacing for all Hindi text */
+html[lang="hi"] * {
+  letter-spacing: 0 !important;
+}
+
+/* Cancel all Tailwind tracking utilities */
+html[lang="hi"] [class*="tracking-"] {
+  letter-spacing: 0 !important;
+}
+
+/* Cancel uppercase transforms — Devanagari has no case */
+html[lang="hi"] *,
+html[lang="hi"] .pill-badge,
+html[lang="hi"] .pill-badge *,
+html[lang="hi"] .label-md,
+html[lang="hi"] .label-lg,
+html[lang="hi"] .text-sm,
+html[lang="hi"] .text-xs,
+html[lang="hi"] [class*="badge"],
+html[lang="hi"] button,
+html[lang="hi"] .btn-primary,
+html[lang="hi"] .btn-secondary {
+  text-transform: none !important;
+}
+
+/* Ensure SVG icons in pill-badges stay aligned */
+html[lang="hi"] .pill-badge svg {
+  flex-shrink: 0;
+}
+
+/* ─── Hindi small text size boost (rem = no cascading) ─── */
+html[lang="hi"] .pill-badge {
+  font-size: 0.625rem !important;
+}
+
+html[lang="hi"] .label-md {
+  font-size: 0.6875rem !important;
+}
+
+html[lang="hi"] .label-lg {
+  font-size: 0.8125rem !important;
+}
+
+html[lang="hi"] .text-xs {
+  font-size: 0.75rem !important;
+}
+
+html[lang="hi"] .text-sm {
+  font-size: 0.875rem !important;
+}
+
+/* ── Scrollbar hide utility ── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
