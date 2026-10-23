@@ -65,9 +65,28 @@ export async function GET(req: Request) {
             }
         }
 
+        if (!clerkUser.id) {
+            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+        }
+
+        const doctorDisplayName = `${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor';
+
         const [newUser] = await sql`
             INSERT INTO users (auth_id, email, name, role, is_verified, last_login, profile_image_url)
-            VALUES (${clerkUser.id}, ${clerkUser.email || ''}, ${`${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'}, 'doctor', false, ${new Date().toISOString()}, ${clerkUser.picture || null})
+            VALUES (
+                ${clerkUser.id},
+                ${clerkUser.email || ''},
+                ${doctorDisplayName},
+                'doctor',
+                false,
+                NOW(),
+                ${clerkUser.picture || null}
+            )
+            ON CONFLICT (auth_id) DO UPDATE SET
+                last_login = NOW(),
+                email = EXCLUDED.email,
+                name = COALESCE(NULLIF(users.name, ''), EXCLUDED.name),
+                profile_image_url = COALESCE(users.profile_image_url, EXCLUDED.profile_image_url)
             RETURNING *
         `;
 
