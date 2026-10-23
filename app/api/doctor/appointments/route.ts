@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
         }
 
         const patientIds = [...new Set(allAppointments.map(apt => apt.pid))];
+        const appointmentIds = allAppointments.map(apt => apt.aid);
 
         const patients = await sql`
             SELECT p.pid, p.uid, u.name, u.email, u.phone, u.profile_image_url
@@ -55,8 +56,20 @@ export async function GET(request: NextRequest) {
             WHERE p.pid = ANY(${patientIds}::uuid[])
         `;
 
+        // Count unread patient messages for each appointment
+        const unreadCounts = await sql`
+            SELECT aid, COUNT(*)::int as count
+            FROM appointment_messages
+            WHERE aid = ANY(${appointmentIds}::uuid[])
+              AND sender_role = 'patient'
+              AND read_at IS NULL
+            GROUP BY aid
+        `;
+        const unreadMap = new Map((unreadCounts || []).map((r: any) => [r.aid, Number(r.count)]));
+
         const enrichedAppointments = allAppointments.map((apt: any) => ({
             ...apt, complaint_description: apt.chief_complaint, payment_status: apt.payment_status,
+            unread_messages_count: unreadMap.get(apt.aid) || 0,
             patient: (() => {
                 const p = patients?.find(pat => pat.pid === apt.pid);
                 return p ? { pid: p.pid, uid: p.uid, user: { name: p.name, email: p.email, phone: p.phone, profile_image_url: p.profile_image_url } } : null;
