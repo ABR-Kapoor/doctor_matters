@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireDoctor } from '@/lib/authz';
 import { Redis } from '@upstash/redis';
 
 const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN 
@@ -9,23 +10,16 @@ const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_RE
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
+
     try {
         const searchParams = request.nextUrl.searchParams;
-        let uid = searchParams.get('uid');
 
-        if (!uid) {
-            return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-        }
-
-        // Get internal uid if clerk auth_id is provided
-        if (uid.startsWith('user_')) {
-            const [dbUser] = await sql`SELECT uid FROM users WHERE auth_id = ${uid}`;
-            if (dbUser) {
-                uid = dbUser.uid;
-            } else {
-                return NextResponse.json({ success: true, overallPercentage: 0, profilePercentage: 0, payoutPercentage: 0, missingFields: [], isVerified: false });
-            }
-        }
+        // `?uid=` used to select whose profile-completion state to read, which
+        // also revealed whether a given account had submitted bank details.
+        // The session is now the only identity.
+        const uid = auth.data.uid;
 
         const cacheKey = `completion:${uid}`;
         if (redis && !searchParams.get('t')) {
@@ -121,6 +115,7 @@ export async function GET(request: NextRequest) {
             payoutPercentage,
             missingFields,
             isVerified: doctor.is_verified || false,
+            verificationRequested: doctor.verification_requested || false,
             verificationRejected: doctor.verification_rejected || false,
             verificationNotes: doctor.verification_notes || null
         };

@@ -118,7 +118,7 @@ export default function DoctorVideoCallPage() {
 
   function handleConsentDecline() {
     toast.error('You must accept the attestation to proceed with the video call.');
-    router.push('/dashboard/appointments');
+    router.push('/dashboard/appointments?tab=today');
   }
 
   async function fetchAppointmentAndInitCall() {
@@ -155,7 +155,7 @@ export default function DoctorVideoCallPage() {
       }
 
       // Fetch appointment details
-      const response = await fetchWithAuth(`/api/doctor/appointments?uid=${user.uid}`, token);
+      const response = await fetchWithAuth(`/api/doctor/appointments`, token);
       const data = await response.json();
 
       if (!data.success) {
@@ -181,35 +181,31 @@ export default function DoctorVideoCallPage() {
       console.log('Loading ZegoCloud SDK...');
       const { ZegoUIKitPrebuilt } = await import('@zegocloud/zego-uikit-prebuilt');
 
-      // Initialize ZegoCloud
-      const appID = parseInt(process.env.NEXT_PUBLIC_ZEGO_APP_ID!);
-      const serverSecret = process.env.NEXT_PUBLIC_ZEGO_SERVER_SECRET || '';
+      const roomID = `appointment_${aid}`;
 
-      if (!appID || !serverSecret) {
-        throw new Error('ZegoCloud credentials missing');
+      // The kit token is minted SERVER-SIDE by /api/calls/zego-token, which
+      // verifies the Clerk session, checks this doctor owns the appointment, and
+      // never exposes ZEGO_SERVER_SECRET. This page used to read the secret from
+      // NEXT_PUBLIC_ZEGO_SERVER_SECRET (publishing it to every browser) and then
+      // re-wrap the server token with the client-side
+      // `generateKitTokenForProduction` helper.
+      console.log('Requesting kit token for room:', roomID);
+
+      const tokenResponse = await fetchWithAuth('/api/calls/zego-token', token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: roomID })
+      });
+      const tokenData = await tokenResponse.json();
+
+      if (!tokenResponse.ok || !tokenData.success || !tokenData.token) {
+        throw new Error(tokenData.error || 'Failed to fetch secure ZegoCloud token from server');
       }
 
-      const roomID = `appointment_${aid}`;
-      // Sanitize userID - remove dashes and special characters for ZegoCloud compatibility
-      const userID = user.uid.replace(/-/g, '');
-      const userName = user.name || 'Doctor';
-
-      console.log('Using sanitized UserID:', userID);
-      console.log('Generating kit token for room:', roomID);
-
-      // Generate kit token for ZegoCloud
-      const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-        appID,
-        serverSecret,
-        roomID,
-        userID,
-        userName
-      );
-
-      console.log('Kit token generated successfully');
+      console.log('Kit token received');
       console.log('Creating ZegoCloud instance...');
 
-      const zp = ZegoUIKitPrebuilt.create(kitToken);
+      const zp = ZegoUIKitPrebuilt.create(tokenData.token);
 
       if (!zp) {
         throw new Error('Failed to create ZegoCloud instance');
@@ -367,7 +363,7 @@ export default function DoctorVideoCallPage() {
 
       // Redirect after showing error
       setTimeout(() => {
-        router.push('/dashboard/appointments');
+        router.push('/dashboard/appointments?tab=today');
       }, 3000);
     }
   }
@@ -503,7 +499,7 @@ export default function DoctorVideoCallPage() {
             <h2 className="text-2xl font-bold text-gray-900 mb-2"><TranslatedText>Connection Failed</TranslatedText></h2>
             <p className="text-gray-600 mb-4">{error}</p>
             <button
-              onClick={() => router.push('/dashboard/appointments')}
+              onClick={() => router.push('/dashboard/appointments?tab=today')}
               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <TranslatedText>Back to Appointments</TranslatedText>
@@ -603,7 +599,7 @@ export default function DoctorVideoCallPage() {
                 <FileSignature className="w-5 h-5 sm:w-6 sm:h-6" /> <TranslatedText>Prescribe Medicine</TranslatedText>
               </button>
               <button
-                onClick={() => router.push('/dashboard/appointments')}
+                onClick={() => router.push('/dashboard/appointments?tab=today')}
                 className="w-full px-4 sm:px-8 py-2.5 sm:py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-300 smooth-transition text-sm sm:text-base"
               >
                 ← <TranslatedText>Back to Dashboard</TranslatedText>
@@ -615,3 +611,7 @@ export default function DoctorVideoCallPage() {
     </div>
   );
 }
+
+
+
+

@@ -142,6 +142,7 @@ export interface Prescription {
   diet_advice?: string;
   follow_up_date?: string;
   follow_up_notes?: string;
+  medicine_system?: 'homeopathy' | 'allopathy' | 'ayurvedic' | null;
   ai_generated: boolean;
   ai_suggestions?: any; // JSONB
   is_active: boolean;

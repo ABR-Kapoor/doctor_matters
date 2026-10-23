@@ -5,7 +5,7 @@ export function useDoctorDashboard(uid: string | null, token: string | null) {
   return useQuery({
     queryKey: ['doctor', 'dashboard', uid],
     queryFn: async () => {
-      const res = await fetchWithAuth(`/api/doctor/dashboard?uid=${uid}`, token);
+      const res = await fetchWithAuth(`/api/doctor/dashboard`, token);
       if (!res.ok) throw new Error('Failed to fetch dashboard');
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Dashboard fetch failed');

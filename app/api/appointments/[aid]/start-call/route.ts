@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireDoctor, requireOwnAppointment, isJoinableStatus } from '@/lib/authz';
 
 export async function POST(request: NextRequest, { params }: { params: { aid: string } }) {
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
+
     try {
         const { aid } = params;
 
-        const [appointment] = await sql`SELECT call_started_at, status FROM appointments WHERE aid = ${aid}`;
+        // Unauthenticated and unscoped before: any caller could start a call on
+        // any appointment and drive its status to `in_progress`.
+        const owned = await requireOwnAppointment(auth.data, aid);
+        if (!owned.ok) return owned.response;
 
-        if (!appointment) {
-            return NextResponse.json({ success: false, error: 'Appointment not found' }, { status: 404 });
-        }
+        const appointment = owned.data;
 
         if (appointment.status === 'cancelled' || appointment.status === 'completed') {
             return NextResponse.json({
@@ -18,7 +23,17 @@ export async function POST(request: NextRequest, { params }: { params: { aid: st
             }, { status: 409 });
         }
 
-        if (appointment?.call_started_at) {
+        // A scheduled appointment must be confirmed by the doctor first. This
+        // route previously only rejected cancelled/completed, so the doctor's
+        // explicit confirmation step could be bypassed by just starting the call.
+        if (!isJoinableStatus(appointment.status)) {
+            return NextResponse.json({
+                success: false,
+                error: 'Confirm the appointment before starting the call',
+            }, { status: 409 });
+        }
+
+        if (appointment.call_started_at) {
             return NextResponse.json({ success: true, message: 'Call already started', data: appointment });
         }
 
@@ -27,7 +42,8 @@ export async function POST(request: NextRequest, { params }: { params: { aid: st
             SET call_started_at = ${new Date().toISOString()},
                 call_ended_at = NULL,
                 status = 'in_progress'
-            WHERE aid = ${aid} RETURNING *
+            WHERE aid = ${aid} AND did = ${auth.data.did}
+            RETURNING *
         `;
 
         return NextResponse.json({ success: true, data, message: 'Call started successfully' });

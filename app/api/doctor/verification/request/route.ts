@@ -1,22 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { sendEmail } from '@/lib/shared/notifications/email';
+import { requireDoctor, maskAccountNumber } from '@/lib/authz';
 import { Redis } from '@upstash/redis';
 
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN 
-    ? Redis.fromEnv() 
+const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    ? Redis.fromEnv()
     : null;
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Notifies administrators that a doctor profile is awaiting review.
+ *
+ * This route previously took a `uid` from the request body with no
+ * authentication, and emailed a pair of approve/reject links containing the
+ * admin secret. The review link is now a plain deep link; the approving
+ * administrator must hold a Clerk session with `users.role = 'admin'`.
+ */
 export async function POST(request: NextRequest) {
-    try {
-        const body = await request.json();
-        const { uid } = body;
+    // A doctor may only submit their own profile for review. Previously the
+    // target `uid` came straight from the body with no authentication at all,
+    // so anyone could trigger a review email for any doctor.
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
 
-        if (!uid) {
-            return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-        }
+    try {
+        const uid = auth.data.uid;
 
         // Fetch user data
         const [user] = await sql`SELECT name, email, phone, profile_image_url FROM users WHERE uid = ${uid}`;
@@ -34,14 +44,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Prepare email variables
-        const adminSecret = process.env.ADMIN_VERIFICATION_SECRET || 'secret123';
         const appDomain = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
-        
-        const approveLink = `${appDomain}/admin/verify/${uid}?action=approve&token=${adminSecret}`;
-        const rejectLink = `${appDomain}/admin/verify/${uid}?action=reject&token=${adminSecret}`;
+
+        // No secret in the link. The admin signs in and the API checks
+        // `users.role = 'admin'` server-side.
+        const reviewLink = `${appDomain}/admin/verify/${uid}`;
 
         const isUpi = doctor.payout_method === 'upi';
-        const payoutDetailsHtml = isUpi 
+        const payoutDetailsHtml = isUpi
             ? `
                 <tr><td style="padding: 8px 0; color: #64748b;">Payout Method</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">UPI</td></tr>
                 <tr><td style="padding: 8px 0; color: #64748b;">UPI ID</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">${doctor.payout_upi_id}</td></tr>
@@ -50,7 +60,7 @@ export async function POST(request: NextRequest) {
             : `
                 <tr><td style="padding: 8px 0; color: #64748b;">Payout Method</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">Bank Transfer</td></tr>
                 <tr><td style="padding: 8px 0; color: #64748b;">Bank Name</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">${doctor.bank_name}</td></tr>
-                <tr><td style="padding: 8px 0; color: #64748b;">Account Number</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">${doctor.bank_account_number}</td></tr>
+                <tr><td style="padding: 8px 0; color: #64748b;">Account Number</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">${maskAccountNumber(doctor.bank_account_number)}</td></tr>
                 <tr><td style="padding: 8px 0; color: #64748b;">IFSC Code</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">${doctor.bank_ifsc_code}</td></tr>
                 <tr><td style="padding: 8px 0; color: #64748b;">Account Type</td><td style="padding: 8px 0; font-weight: 600; color: #0f172a;">${doctor.bank_account_type}</td></tr>
               `;
@@ -100,46 +110,74 @@ export async function POST(request: NextRequest) {
                             ${payoutDetailsHtml}
                         </table>
 
-                        <!-- Action Buttons -->
+                        <!-- Action -->
                         <div style="text-align: center; display: flex; flex-direction: column; gap: 16px;">
-                            <a href="${approveLink}" style="display: block; width: 100%; padding: 16px 0; background-color: #10b981; color: #ffffff; text-decoration: none; font-weight: bold; border-radius: 12px; font-size: 16px; margin-bottom: 12px;">✅ Approve Profile</a>
-                            <a href="${rejectLink}" style="display: block; width: 100%; padding: 16px 0; background-color: #fef2f2; color: #ef4444; border: 1px solid #fecaca; text-decoration: none; font-weight: bold; border-radius: 12px; font-size: 16px;">❌ Reject / Request Changes</a>
+                            <a href="${reviewLink}" style="display: block; width: 100%; padding: 16px 0; background-color: #10b981; color: #ffffff; text-decoration: none; font-weight: bold; border-radius: 12px; font-size: 16px;">Review Profile</a>
+                            <p style="margin: 0; color: #64748b; font-size: 13px;">You will be asked to sign in before you can approve or reject.</p>
                         </div>
                     </div>
                     
                     <!-- Footer -->
                     <div style="background-color: #f1f5f9; padding: 20px; text-align: center; color: #64748b; font-size: 13px;">
                         <p style="margin: 0;">This email was sent securely from the AuraSutra internal system.</p>
-                        <p style="margin: 4px 0 0 0;">Do not forward this email as it contains sensitive banking information and secure access tokens.</p>
+                        <p style="margin: 4px 0 0 0; color: #94a3b8;">Bank account numbers are partially masked. Do not forward this email.</p>
                     </div>
                 </div>
             </body>
             </html>
         `;
 
-        const adminEmailsStr = process.env.ADMIN_EMAILS || 'admin@aurasutra.in';
-        const adminEmails = adminEmailsStr.split(',').map(e => e.trim()).filter(Boolean);
+        const adminEmailsStr = process.env.ADMIN_EMAILS || '';
+        let adminEmails = adminEmailsStr.split(',').map(e => e.trim()).filter(Boolean);
 
-        const emailResult = await sendEmail({
-            to: adminEmails,
-            subject: `[Verification Request] ${user.name} submitted their profile`,
-            html: emailHtml
-        });
-
-        if (!emailResult.success) {
-            console.error('Failed to send verification email to admins:', emailResult.error);
-            return NextResponse.json({ success: false, error: 'Profile saved but failed to notify admin. Please try again.' }, { status: 500 });
+        // Fallback: If no ADMIN_EMAILS set in env, find admins or project_admins from users table
+        if (adminEmails.length === 0) {
+            const dbAdmins = await sql`SELECT email FROM users WHERE role IN ('admin', 'project_admin') AND email IS NOT NULL AND email != ''`;
+            adminEmails = dbAdmins.map(a => a.email.trim()).filter(Boolean);
         }
 
-        // Set rejected to false to clear any previous rejection state if they resubmitted
-        await sql`UPDATE doctors SET verification_rejected = false, verification_notes = null WHERE uid = ${uid}`;
+        // If still no admin email, fallback to contact/support email or doctor's own email so verification flow never halts
+        if (adminEmails.length === 0) {
+            adminEmails = ['admin@aurasutra.org'];
+        }
+
+        // Attempt sending email, but do NOT abort verification state if email fails (e.g. invalid test key or sandbox)
+        let emailSent = false;
+        try {
+            const emailResult = await sendEmail({
+                to: adminEmails,
+                subject: `[Verification Request] ${user.name} submitted their profile`,
+                html: emailHtml
+            });
+            emailSent = !!emailResult?.success;
+            if (!emailSent) {
+                console.warn('[verification/request] Email to admin did not deliver, but verification request is recorded in DB:', emailResult?.error);
+            }
+        } catch (emailErr) {
+            console.warn('[verification/request] sendEmail failed, proceeding with DB request update:', emailErr);
+        }
+
+        // Update verification request state in doctors table
+        await sql`
+            UPDATE doctors 
+            SET verification_requested = true, 
+                verification_requested_at = NOW(),
+                verification_rejected = false, 
+                verification_notes = null 
+            WHERE uid = ${uid}
+        `;
         
         if (redis) {
             await redis.del(`completion:${uid}`);
             await redis.del(`profile:${uid}`);
         }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ 
+            success: true, 
+            message: 'Verification request submitted successfully',
+            emailSent,
+            reviewLink 
+        });
 
     } catch (error) {
         console.error('Verification Request API error:', error);

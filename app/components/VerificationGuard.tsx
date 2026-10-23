@@ -28,7 +28,7 @@ export default function VerificationGuard({ children }: { children: React.ReactN
 
     async function fetchCompletion() {
       try {
-        const response = await fetch(`/api/doctor/profile/completion?uid=${userId}&t=${Date.now()}`, { cache: 'no-store' });
+        const response = await fetch(`/api/doctor/profile/completion?t=${Date.now()}`, { cache: 'no-store' });
         const result = await response.json();
         if (result.success) {
           setData(result);

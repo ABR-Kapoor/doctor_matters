@@ -57,7 +57,7 @@ export default function EditPrescriptionPage() {
       const syncResponse = await fetchWithAuth('/api/sync-user', token);
       const { user } = await syncResponse.json();
 
-      const profileResponse = await fetchWithAuth(`/api/doctor/profile?uid=${user.uid}`, token);
+      const profileResponse = await fetchWithAuth(`/api/doctor/profile`, token);
       const profileData = await profileResponse.json();
 
       if (!profileData.success) {
@@ -65,7 +65,7 @@ export default function EditPrescriptionPage() {
         return;
       }
 
-      const response = await fetchWithAuth(`/api/doctor/prescriptions?did=${profileData.doctor.did}`, token);
+      const response = await fetchWithAuth(`/api/doctor/prescriptions`, token);
       const data = await response.json();
 
       if (data.success) {

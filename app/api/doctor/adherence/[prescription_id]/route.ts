@@ -1,20 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireDoctor, requireOwnPrescription } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(request: NextRequest, { params }: { params: { prescription_id: string } }) {
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
+
     try {
         const { prescription_id } = params;
-        if (!prescription_id) return NextResponse.json({ success: false, error: 'Prescription ID required' }, { status: 400 });
+
+        // Unauthenticated before: any caller could read a patient's medication
+        // schedule and adherence history for any prescription id.
+        const owned = await requireOwnPrescription(auth.data, prescription_id);
+        if (!owned.ok) return owned.response;
 
         const [prescription] = await sql`
-            SELECT p.*, u.name as patient_name, u.profile_image_url as patient_image
+            SELECT p.prescription_id, p.pid, p.did, p.diagnosis, u.name as patient_name, u.profile_image_url as patient_image
             FROM prescriptions p
             JOIN patients pat ON p.pid = pat.pid
             JOIN users u ON pat.uid = u.uid
-            WHERE p.prescription_id = ${prescription_id}
+            WHERE p.prescription_id = ${prescription_id} AND p.did = ${auth.data.did}
         `;
 
         const adherenceRecords = await sql`
@@ -84,7 +92,7 @@ export async function GET(request: NextRequest, { params }: { params: { prescrip
         const medicineMap = new Map();
         adherenceRecords.forEach(record => {
             const name = record.medicine_name;
-            if (!medicineMap.has(name)) medicineMap.set(name, { medicine_name: name, total: 0, taken: 0, skipped: 0, notTaken: 0 });
+            if (!medicineMap.has(name)) medicineMap.set(name, { medicine_name: name, total: 0, taken: 0, skipped: 0, notTaken: 0, elapsedTotal: 0 });
             const med = medicineMap.get(name);
             med.total++; 
             if (record.is_taken) med.taken++;
@@ -96,6 +104,9 @@ export async function GET(request: NextRequest, { params }: { params: { prescrip
             
             if (isPending(record) && (dateStr < todayStr || (dateStr === todayStr && record.scheduled_time <= timeStr))) {
                 med.notTaken++;
+            }
+            if (!isPending(record) || (dateStr < todayStr || (dateStr === todayStr && record.scheduled_time <= timeStr))) {
+                med.elapsedTotal++;
             }
         });
 
@@ -114,6 +125,55 @@ export async function GET(request: NextRequest, { params }: { params: { prescrip
             })
             .slice(0, 5);
 
+        // Full dose-by-dose history (every scheduled time, its status and the
+        // moment it was acted on). Opt-in via ?with_doses=1 so the
+        // prescriptions dashboard — which polls this route every 15s for each
+        // card — never pays for a payload only the detail screen renders.
+        const dateKey = (value: any) =>
+            typeof value === 'object' && value instanceof Date
+                ? value.toISOString().split('T')[0]
+                : String(value).split('T')[0];
+
+        const withDoses = request.nextUrl.searchParams.get('with_doses') === '1';
+        const doseLogMap = new Map<string, any[]>();
+
+        if (withDoses) {
+            const sorted = [...adherenceRecords].sort((a, b) => {
+                const dateA = dateKey(a.scheduled_date);
+                const dateB = dateKey(b.scheduled_date);
+                if (dateA !== dateB) return dateA.localeCompare(dateB);
+                return String(a.scheduled_time).localeCompare(String(b.scheduled_time));
+            });
+
+            for (const record of sorted) {
+                const recordDate = dateKey(record.scheduled_date);
+                const elapsed = recordDate < todayStr || (recordDate === todayStr && record.scheduled_time <= timeStr);
+                const status = record.is_taken
+                    ? 'taken'
+                    : record.is_skipped
+                        ? 'skipped'
+                        : elapsed ? 'missed' : 'pending';
+
+                const entry = {
+                    adherence_id: record.adherence_id,
+                    date: recordDate,
+                    time: String(record.scheduled_time).substring(0, 5),
+                    status,
+                    taken_at: record.taken_at || null,
+                    skipped_at: record.skipped_at || null
+                };
+
+                const list = doseLogMap.get(record.medicine_name);
+                if (list) list.push(entry);
+                else doseLogMap.set(record.medicine_name, [entry]);
+            }
+        }
+
+        const dose_log = Array.from(doseLogMap.entries()).map(([medicine_name, doses]) => ({
+            medicine_name,
+            doses
+        }));
+
         return NextResponse.json({
             success: true,
             stats: {
@@ -125,6 +185,7 @@ export async function GET(request: NextRequest, { params }: { params: { prescrip
                 medicine_breakdown: Array.from(medicineMap.values()).map(m => ({ ...m, adherence_rate: m.total > 0 ? ((m.taken / m.total) * 100).toFixed(1) : 0 })),
                 recent_activity,
                 upcoming_activity,
+                dose_log,
                 patient: prescription ? { name: prescription.patient_name, profile_image_url: prescription.patient_image } : null
             }
         });

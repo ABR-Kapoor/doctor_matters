@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { apiGetDoctorAppointments } from '@aurasutra/doctor-shared';
 
 export interface Appointment {
   aid: string;
@@ -44,9 +44,7 @@ export function useDoctorAppointments(uid: string | null, token: string | null, 
   return useQuery<AppointmentBuckets>({
     queryKey: ['doctor', 'appointments', uid],
     queryFn: async () => {
-      const res = await fetchWithAuth(`/api/doctor/appointments?uid=${uid}`, token);
-      if (!res.ok) throw new Error('Failed to fetch appointments');
-      const data = await res.json();
+      const data = await apiGetDoctorAppointments('', token);
       if (!data.success) throw new Error(data.error || 'Appointments fetch failed');
       return {
         pending: data.appointments?.pending || [],
@@ -56,8 +54,8 @@ export function useDoctorAppointments(uid: string | null, token: string | null, 
         cancelled: data.appointments?.cancelled || [],
       };
     },
-    staleTime: 20_000,
-    refetchInterval: hasActiveCall ? 5_000 : 15_000,
+    staleTime: 10_000,
+    refetchInterval: hasActiveCall ? 5_000 : 10_000,
     enabled: !!(uid && uid.length > 0 && token),
   });
 }
