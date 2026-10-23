@@ -19,7 +19,7 @@ export async function GET(
 
         const appointment = owned.data;
 
-        // Fetch messages for this appointment
+        // Fetch messages for this appointment with sender user info (name, image)
         const rawMessages = await sql`
             SELECT 
                 m.message_id,
@@ -30,7 +30,8 @@ export async function GET(
                 m.media_url,
                 m.created_at,
                 m.read_at,
-                u.name as sender_name
+                u.name as sender_name,
+                u.profile_image_url as sender_image
             FROM appointment_messages m
             LEFT JOIN users u ON m.sender_uid = u.uid
             WHERE m.aid = ${aid}
@@ -66,13 +67,31 @@ export async function GET(
         const statusNorm = String(appointment.status || '').trim().toLowerCase();
         const canChat = ['confirmed', 'in_progress', 'completed', 'scheduled', 'booked', 'requested'].includes(statusNorm) && statusNorm !== 'cancelled';
 
-        // Load patient details if not present
+        // Load patient details including profile image
         let patientName = 'Patient';
+        let patientAvatar = '';
         try {
             const [pt] = await sql`
-                SELECT u.name FROM patients p JOIN users u ON p.uid = u.uid WHERE p.pid = ${appointment.pid} LIMIT 1
+                SELECT u.name, u.profile_image_url
+                FROM patients p
+                JOIN users u ON p.uid = u.uid
+                WHERE p.pid = ${appointment.pid}
+                LIMIT 1
             `;
             if (pt?.name) patientName = pt.name;
+            if (pt?.profile_image_url) patientAvatar = pt.profile_image_url;
+        } catch {}
+
+        // Load doctor profile image
+        let doctorAvatar = '';
+        try {
+            const [docUser] = await sql`
+                SELECT u.profile_image_url
+                FROM users u
+                WHERE u.uid = ${auth.data.uid}
+                LIMIT 1
+            `;
+            if (docUser?.profile_image_url) doctorAvatar = docUser.profile_image_url;
         } catch {}
 
         return NextResponse.json({
@@ -84,6 +103,8 @@ export async function GET(
                 status: appointment.status,
                 mode: appointment.mode,
                 patient_name: patientName,
+                patient_avatar: patientAvatar,
+                doctor_avatar: doctorAvatar,
             },
             appointmentStatus: appointment.status,
             canChat,
@@ -148,9 +169,17 @@ export async function POST(
             RETURNING *
         `;
 
+        // Fetch sender's profile image to attach directly
+        let doctorAvatar = '';
+        try {
+            const [docUser] = await sql`SELECT profile_image_url FROM users WHERE uid = ${auth.data.uid} LIMIT 1`;
+            doctorAvatar = docUser?.profile_image_url || '';
+        } catch {}
+
         const messageWithSender = {
             ...newMessage,
             sender_name: auth.data.name || 'Doctor',
+            sender_image: doctorAvatar,
         };
 
         // Notify the recipient (patient) with batch notification
