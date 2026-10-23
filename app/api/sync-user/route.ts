@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
     try {
-        const clerkUser = await verifyClerkUser();
+        const clerkUser = await verifyClerkUser(req);
 
         if (!clerkUser || !clerkUser.id) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -29,7 +29,8 @@ export async function GET(req: Request) {
                 UPDATE users
                 SET last_login = ${new Date().toISOString()},
                     email = ${clerkUser.email || authUser.email},
-                    name = ${authUser.name || `${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'}
+                    name = ${authUser.name || `${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'},
+                    profile_image_url = COALESCE(profile_image_url, ${clerkUser.picture || null})
                 WHERE uid = ${authUser.uid}
                 RETURNING *
             `;
@@ -54,7 +55,8 @@ export async function GET(req: Request) {
                     UPDATE users
                     SET last_login = ${new Date().toISOString()},
                         auth_id = ${clerkUser.id},
-                        name = ${emailUser.name || `${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'}
+                        name = ${emailUser.name || `${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'},
+                        profile_image_url = COALESCE(profile_image_url, ${clerkUser.picture || null})
                     WHERE uid = ${emailUser.uid}
                     RETURNING *
                 `;
@@ -64,14 +66,14 @@ export async function GET(req: Request) {
         }
 
         const [newUser] = await sql`
-            INSERT INTO users (auth_id, email, name, role, is_verified, last_login)
-            VALUES (${clerkUser.id}, ${clerkUser.email || ''}, ${`${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'}, 'doctor', false, ${new Date().toISOString()})
+            INSERT INTO users (auth_id, email, name, role, is_verified, last_login, profile_image_url)
+            VALUES (${clerkUser.id}, ${clerkUser.email || ''}, ${`${clerkUser.given_name || ''} ${clerkUser.family_name || ''}`.trim() || 'Doctor'}, 'doctor', false, ${new Date().toISOString()}, ${clerkUser.picture || null})
             RETURNING *
         `;
 
         // Notify admin of new doctor registration
         try {
-            const adminEmailsStr = process.env.ADMIN_EMAILS || 'admin@aurasutra.in';
+            const adminEmailsStr = process.env.ADMIN_EMAILS || 'admin@aurasutra.org';
             const adminEmails = adminEmailsStr.split(',').map(e => e.trim()).filter(Boolean);
             const regTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
             const doctorName = newUser.name || 'Unknown';

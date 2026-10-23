@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { apiGetDoctorPatients } from '@aurasutra/doctor-shared';
 
 export interface Patient {
   pid: string;
@@ -18,13 +18,11 @@ export function useDoctorPatients(uid: string | null, token: string | null) {
   return useQuery<Patient[]>({
     queryKey: ['doctor', 'patients', uid],
     queryFn: async () => {
-      const res = await fetchWithAuth(`/api/doctor/patients?uid=${uid}`, token);
-      if (!res.ok) throw new Error('Failed to fetch patients');
-      const data = await res.json();
+      const data = await apiGetDoctorPatients('', token, uid);
       if (!data.success) throw new Error(data.error || 'Patients fetch failed');
       return data.patients || [];
     },
-    staleTime: 2 * 60_000, // 2 minutes — patient list rarely changes
+    staleTime: 2 * 60_000, // 2 minutes � patient list rarely changes
     enabled: !!(uid && uid.length > 0 && token),
   });
 }

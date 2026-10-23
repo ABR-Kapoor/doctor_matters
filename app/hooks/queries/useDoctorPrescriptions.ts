@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { apiGetDoctorPrescriptions } from '@aurasutra/doctor-shared';
 
 export interface Prescription {
   prescription_id: string;
@@ -26,9 +26,7 @@ export function useDoctorPrescriptions(did: string | null, token: string | null)
   return useQuery<Prescription[]>({
     queryKey: ['doctor', 'prescriptions', did],
     queryFn: async () => {
-      const res = await fetchWithAuth(`/api/doctor/prescriptions?did=${did}`, token);
-      if (!res.ok) throw new Error('Failed to fetch prescriptions');
-      const data = await res.json();
+      const data = await apiGetDoctorPrescriptions('', token);
       if (!data.success) throw new Error(data.error || 'Prescriptions fetch failed');
       return data.prescriptions || [];
     },

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { apiUpdateAppointmentStatus } from '@aurasutra/doctor-shared';
 import toast from 'react-hot-toast';
 
 interface UpdateStatusVars {
@@ -14,12 +14,7 @@ export function useUpdateAppointmentStatus() {
 
   return useMutation({
     mutationFn: async ({ aid, status, token }: UpdateStatusVars) => {
-      const res = await fetchWithAuth('/api/doctor/appointments', token, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aid, status }),
-      });
-      const data = await res.json();
+      const data = await apiUpdateAppointmentStatus('', token, aid, status);
       if (!data.success) throw new Error(data.error || 'Failed to update appointment');
       return data;
     },
@@ -28,7 +23,7 @@ export function useUpdateAppointmentStatus() {
       await queryClient.cancelQueries({ queryKey: ['doctor', 'appointments', uid] });
       const previous = queryClient.getQueryData(['doctor', 'appointments', uid]);
 
-      // Optimistic update — move appointment to the right bucket
+      // Optimistic update � move appointment to the right bucket
       queryClient.setQueryData(['doctor', 'appointments', uid], (old: any) => {
         if (!old) return old;
         const allApts = [...old.pending, ...old.confirmed, ...old.today, ...old.completed, ...old.cancelled];
@@ -42,7 +37,7 @@ export function useUpdateAppointmentStatus() {
               ? status : 'completed';
             buckets[bucket].push(updated);
           } else {
-            const b = a.status === 'scheduled' ? 'pending' : (a.status as string);
+            const b = (a.status === 'scheduled' || a.status === 'pending') ? 'pending' : (a.status as string);
             if (buckets[b]) buckets[b].push(a);
           }
         });

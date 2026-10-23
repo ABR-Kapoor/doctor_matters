@@ -21,7 +21,7 @@ export default function ProfilePicture({ uid }: { uid?: string }) {
       
       if (user?.uid) {
         setProfileName(user?.name || 'Doctor');
-        const profileResponse = await fetchWithAuth(`/api/doctor/profile?uid=${user.uid}`, token);
+        const profileResponse = await fetchWithAuth(`/api/doctor/profile`, token);
         const data = await profileResponse.json();
         
         if (data.success && data.doctor?.profile_image_url) {

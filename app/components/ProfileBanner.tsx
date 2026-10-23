@@ -37,7 +37,7 @@ export default function ProfileBanner({ user, uid: uidProp }: ProfileBannerProps
       const uid = uidProp || user?.id;
       if (!uid) return;
 
-      const profileRes = await fetchWithAuth(`/api/doctor/profile?uid=${uid}`, token);
+      const profileRes = await fetchWithAuth(`/api/doctor/profile`, token);
 
       const profileData = await profileRes.json();
       if (!profileData.success || !profileData.doctor) return;

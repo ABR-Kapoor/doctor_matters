@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { sendEmail } from '@/lib/shared/notifications/email';
+import { requireDoctor } from '@/lib/authz';
 import { Redis } from '@upstash/redis';
 
 const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN 
@@ -22,26 +23,14 @@ interface BankDetails {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor();
+  if (!auth.ok) return auth.response;
+
   try {
-    const searchParams = request.nextUrl.searchParams;
-    let uid = searchParams.get('uid');
-
-    if (!uid) {
-      return NextResponse.json({ error: 'User ID (uid) required' }, { status: 400 });
-    }
-
-    if (uid.startsWith('user_')) {
-      const [dbUser] = await sql`SELECT uid FROM users WHERE auth_id = ${uid}`;
-      if (dbUser) {
-        uid = dbUser.uid;
-      } else {
-        return NextResponse.json({
-          success: true,
-          bankDetails: null,
-          message: 'User not found',
-        });
-      }
-    }
+    // `?uid=` used to select whose bank details to read. Combined with the
+    // complete absence of an auth check, that returned any doctor's account
+    // number, IFSC and UPI id to any caller. The session is now the only source.
+    const uid = auth.data.uid;
 
     let doctor: any;
     try {
@@ -100,21 +89,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor();
+  if (!auth.ok) return auth.response;
+
   try {
-    let { uid, bankDetails } = await request.json();
+    const { bankDetails } = await request.json();
 
-    if (!uid) {
-      return NextResponse.json({ error: 'User ID (uid) required' }, { status: 400 });
-    }
-
-    if (uid.startsWith('user_')) {
-      const [dbUser] = await sql`SELECT uid FROM users WHERE auth_id = ${uid}`;
-      if (dbUser) {
-        uid = dbUser.uid;
-      } else {
-        return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
-      }
-    }
+    // Never trust a client-supplied uid: the target doctor is always the caller.
+    const uid = auth.data.uid;
 
     if (!bankDetails) {
       return NextResponse.json({ error: 'Bank details required' }, { status: 400 });

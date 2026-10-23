@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Home, Calendar, Users, Pill, User, IndianRupee, LogOut, Lock } from 'lucide-react';
+import { Home, Calendar, Users, Pill, User, IndianRupee, LogOut, Lock, MessageSquare } from 'lucide-react';
 import { TranslatedText } from '@/app/components/TranslatedText';
 import { useEffect, useState } from 'react';
 import { useAuth, SignOutButton } from '@clerk/nextjs';
@@ -21,7 +21,7 @@ export default function SidebarNavigation({ isCollapsed = false }: SidebarNaviga
         if (!userId) return;
         async function fetchCompletion() {
             try {
-                const response = await fetch(`/api/doctor/profile/completion?uid=${userId}&t=${Date.now()}`, { cache: 'no-store' });
+                const response = await fetch(`/api/doctor/profile/completion?t=${Date.now()}`, { cache: 'no-store' });
                 const result = await response.json();
                 if (result.success && result.isVerified) {
                     setIsFullyVerified(true);
@@ -35,11 +35,15 @@ export default function SidebarNavigation({ isCollapsed = false }: SidebarNaviga
         fetchCompletion();
     }, [userId]);
 
+    // AURASUTRA-REVIEWS:sidebar_reviews_entry
+    // Patient feedback, one entry per consultation (reviews.aid is UNIQUE), so
+    // the count is a real number rather than a placeholder.
     const items = [
         { name: 'Dashboard', href: '/dashboard', icon: Home, restricted: true },
         { name: 'Appointments', href: '/dashboard/appointments', icon: Calendar, restricted: true },
         { name: 'Patients', href: '/dashboard/patients', icon: Users, restricted: true },
         { name: 'Prescriptions', href: '/dashboard/prescriptions', icon: Pill, restricted: true },
+        { name: 'Reviews', href: '/dashboard/reviews', icon: MessageSquare, restricted: true },
         { name: 'Finance', href: '/dashboard/finance', icon: IndianRupee, restricted: true },
         { name: 'Profile', href: '/dashboard/profile', icon: User, restricted: false },
     ];

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, RefreshCw, Home } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ErrorBoundary({
   error,
@@ -15,26 +16,30 @@ export default function ErrorBoundary({
   }, [error]);
 
   return (
-    <div className="flex h-screen w-full flex-col items-center justify-center bg-background text-foreground">
-      <div className="flex flex-col items-center space-y-4 text-center">
-        <AlertCircle className="h-16 w-16 text-destructive" />
-        <h1 className="text-3xl font-bold tracking-tight">Something went wrong!</h1>
-        <p className="text-muted-foreground max-w-[500px]">
-          We apologize for the inconvenience. An unexpected error occurred in the application.
+    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-slate-50 p-4 text-slate-800">
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl border border-slate-100 text-center">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-100 text-red-600">
+          <AlertCircle className="h-8 w-8" />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-2">Something went wrong!</h1>
+        <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+          {error?.message || 'We apologize for the inconvenience. An unexpected error occurred while loading this page.'}
         </p>
-        <div className="flex gap-4 mt-6">
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
-          >
-            Reload Page
-          </button>
+        <div className="flex flex-col gap-3">
           <button
             onClick={() => reset()}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md shadow hover:bg-primary/90 transition-colors"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-blue-200 transition-all hover:bg-blue-700"
           >
+            <RefreshCw className="h-4 w-4" />
             Try again
           </button>
+          <Link
+            href="/dashboard"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50"
+          >
+            <Home className="h-4 w-4 text-slate-500" />
+            Back to Dashboard
+          </Link>
         </div>
       </div>
     </div>

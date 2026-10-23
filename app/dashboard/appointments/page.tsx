@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useState, useEffect } from 'react';
 import { Calendar, Video, MapPin, Check, X, Clock, User, CheckCircle, Phone, MoreVertical, Plus, ChevronLeft, ChevronRight, RefreshCw, AlertTriangle, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { TranslatedText } from '@/app/components/TranslatedText';
 import { formatDate } from '@/lib/shared/utils';
 import { NameText } from '@/app/components/NameText';
@@ -150,7 +150,11 @@ function AppointmentsContent() {
   const token = useAuthToken();
   const { translate } = useLanguage();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'pending' | 'confirmed' | 'today' | 'completed' | 'cancelled'>('pending');
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab') as any;
+  const [activeTab, setActiveTab] = useState<'pending' | 'confirmed' | 'today' | 'completed' | 'cancelled'>(
+    (tabParam && ['pending', 'confirmed', 'today', 'completed', 'cancelled'].includes(tabParam)) ? tabParam : 'pending'
+  );
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   // ── TanStack Query ──
@@ -168,6 +172,12 @@ function AppointmentsContent() {
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openDropdown]);
+
+  useEffect(() => {
+    if (tabParam && ['pending', 'confirmed', 'today', 'completed', 'cancelled'].includes(tabParam)) {
+      setActiveTab(tabParam as any);
+    }
+  }, [tabParam]);
 
   async function updateAppointmentStatus(aid: string, status: string) {
     if (!uid) return;
@@ -406,7 +416,7 @@ function AppointmentsContent() {
 
                       {/* Actions */}
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {apt.status === 'scheduled' && (
+                        {['scheduled', 'pending'].includes(apt.status) && (
                           <>
                             <button
                               onClick={() => updateAppointmentStatus(apt.aid, 'confirmed')}
@@ -423,7 +433,7 @@ function AppointmentsContent() {
                             </button>
                           </>
                         )}
-                        {(apt.status === 'confirmed' || apt.status === 'in_progress') && (
+                        {((apt.status === 'confirmed' || apt.status === 'in_progress') || (apt.status === 'scheduled' && apt.mode === 'online')) && (
                           <>
                             <button
                               onClick={() => {
@@ -438,7 +448,7 @@ function AppointmentsContent() {
                               {apt.mode === 'online' ? <Video className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
                               <TranslatedText>
                                 {apt.mode === 'online' 
-                                  ? (apt.status === 'in_progress' ? 'Rejoin Call' : 'Start Call') 
+                                  ? (apt.status === 'in_progress' ? 'Rejoin Call' : 'Join Video Call') 
                                   : 'Complete Visit'}
                               </TranslatedText>
                             </button>

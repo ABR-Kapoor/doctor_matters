@@ -27,9 +27,9 @@ export function useDoctorFinance(uid: string | null, token: string | null) {
     queryKey: ['doctor', 'finance', uid],
     queryFn: async () => {
       const [profileRes, bankRes, financeRes] = await Promise.all([
-        fetchWithAuth(`/api/doctor/profile?uid=${uid}`, token),
-        fetch(`/api/doctor/bank-details?uid=${uid}`),
-        fetchWithAuth(`/api/doctor/finance?uid=${uid}`, token).catch(() => null),
+        fetchWithAuth(`/api/doctor/profile`, token),
+        fetch(`/api/doctor/bank-details`),
+        fetchWithAuth(`/api/doctor/finance`, token).catch(() => null),
       ]);
 
       const profileData = await profileRes.json();

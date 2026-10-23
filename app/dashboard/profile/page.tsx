@@ -17,6 +17,12 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 
 import { useProfileStore } from '@/app/store/useProfileStore';
 
+// AURASUTRA-REVIEWS:profile_rating_marker
+// `doctors.avg_rating` / `doctors.total_reviews` are maintained by the
+// `trg_refresh_doctor_rating` trigger on `public.reviews` — one review per
+// completed consultation. Nothing on this page may seed, default or infer a
+// rating; the review feed lives at /dashboard/reviews.
+
 
 const AYURVEDIC_SPECIALIZATIONS = [
   'General Ayurveda', 'Panchakarma Specialist', 'Rasayana (Rejuvenation)',
@@ -160,15 +166,24 @@ function ProfileCompletionBar({ overallPercentage, profilePercentage, payoutPerc
               
               const toastId = toast.loading('Sending verification request to admin...');
               try {
+                // No `uid` in the body: the API resolves the target doctor from
+                // the Clerk session, so a doctor can only submit their own profile.
                 const res = await fetch('/api/doctor/verification/request', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uid })
+                    body: JSON.stringify({})
                 });
                 if (res.ok) {
                     toast.success('Your profile has been submitted and is currently under review by our admin team! It will be verified shortly.', { id: toastId });
                 } else {
-                    toast.error('Failed to send verification request.', { id: toastId });
+                    let message = 'Failed to send verification request.';
+                    try {
+                        const body = await res.json();
+                        if (res.status === 401) message = 'Please sign in again to submit your profile.';
+                        else if (res.status === 403) message = body.message || 'This account cannot submit a doctor profile.';
+                        else if (body.error) message = body.error;
+                    } catch { /* keep default */ }
+                    toast.error(message, { id: toastId });
                     setVerificationRequested(false);
                     if (typeof window !== 'undefined') localStorage.setItem('verificationRequested', 'false');
                 }
@@ -258,7 +273,7 @@ export default function DoctorProfilePage() {
 
   const fetchCompletion = async (currentUid: string) => {
     try {
-      const response = await fetch(`/api/doctor/profile/completion?uid=${currentUid}`);
+      const response = await fetch(`/api/doctor/profile/completion`);
       const result = await response.json();
       if (result.success) {
         setCompletionData(result);
@@ -279,7 +294,7 @@ export default function DoctorProfilePage() {
     if (verificationRequested && !isVerified && uid) {
       interval = setInterval(async () => {
          try {
-           const res = await fetch(`/api/doctor/profile/completion?uid=${uid}`);
+           const res = await fetch(`/api/doctor/profile/completion`);
            const data = await res.json();
            
            if (data.isVerified) {
@@ -359,7 +374,7 @@ export default function DoctorProfilePage() {
 
   async function fetchBankDetails(doctorUid: string) {
     try {
-      const bankResponse = await fetch(`/api/doctor/bank-details?uid=${doctorUid}`);
+      const bankResponse = await fetch(`/api/doctor/bank-details`);
       const bankData = await bankResponse.json();
       if (bankData.bankDetails) {
         if (bankData.bankDetails?.addedAt) {
@@ -389,7 +404,7 @@ export default function DoctorProfilePage() {
       if (!user) { toast.error(await translate('User not found.')); setLoading(false); return; }
       setUid(user.uid);
 
-      const profileResponse = await fetchWithAuth(`/api/doctor/profile?uid=${user.uid}&t=${Date.now()}`, token, { cache: 'no-store' });
+      const profileResponse = await fetchWithAuth(`/api/doctor/profile?t=${Date.now()}`, token, { cache: 'no-store' });
       const data = await profileResponse.json();
       if (data.success) {
         setIsVerified(Boolean(data.doctor?.is_verified));

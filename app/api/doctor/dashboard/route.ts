@@ -1,32 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireDoctor } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
+
     try {
-        const searchParams = request.nextUrl.searchParams;
-        let uid = searchParams.get('uid');
-
-        if (!uid) {
-            return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-        }
-
-        if (uid.startsWith('user_')) {
-            const [dbUser] = await sql`SELECT uid FROM users WHERE auth_id = ${uid}`;
-            if (dbUser) {
-                uid = dbUser.uid;
-            } else {
-                return NextResponse.json({
-                    success: true, totalPatients: 0, todayAppointments: 0,
-                    pendingRequests: 0, activePrescriptions: 0,
-                    pendingApprovals: 0, monthlyRevenue: 0, appointmentsData: [], patientsData: [],
-                });
-            }
-        }
-
-        const [doctor] = await sql`SELECT * FROM doctors WHERE uid = ${uid}`;
+        // The `?uid=` selector is removed; the session is the only identity.
+        const [doctor] = await sql`SELECT did, consultation_fee FROM doctors WHERE uid = ${auth.data.uid}`;
 
         if (!doctor) {
             return NextResponse.json({

@@ -19,23 +19,28 @@ export async function checkRateLimit(identifier: string) {
     return { success: true }; // Bypass in dev if no keys
   }
 
-  const { success, limit, reset, remaining } = await rateLimit.limit(identifier);
+  try {
+    const { success, limit, reset, remaining } = await rateLimit.limit(identifier);
 
-  if (!success) {
-    return {
-      success: false,
-      response: NextResponse.json(
-        { success: false, error: 'Too many requests. Please try again later.' },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': limit.toString(),
-            'X-RateLimit-Remaining': remaining.toString(),
-            'X-RateLimit-Reset': reset.toString()
+    if (!success) {
+      return {
+        success: false,
+        response: NextResponse.json(
+          { success: false, error: 'Too many requests. Please try again later.' },
+          {
+            status: 429,
+            headers: {
+              'X-RateLimit-Limit': limit.toString(),
+              'X-RateLimit-Remaining': remaining.toString(),
+              'X-RateLimit-Reset': reset.toString()
+            }
           }
-        }
-      )
-    };
+        )
+      };
+    }
+  } catch (error) {
+    console.warn('Rate limiting failed due to Redis error:', error);
+    // Gracefully bypass if Redis is unreachable to avoid 500 errors
   }
 
   return { success: true };

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireDoctor } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 interface FinanceQueryParams {
-  uid?: string;
   limit?: string;
   offset?: string;
 }
@@ -38,22 +38,20 @@ interface DoctorEarnings {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  const auth = await requireDoctor();
+  if (!auth.ok) return auth.response;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const params: FinanceQueryParams = {
-      uid: searchParams.get('uid') || undefined,
       limit: searchParams.get('limit') || '50',
       offset: searchParams.get('offset') || '0',
     };
 
-    if (!params.uid) {
-      return NextResponse.json({ error: 'User ID (uid) required' }, { status: 400 });
-    }
-
-    // Get doctor ID from uid
-    const [doctor] = await sql`
-      SELECT did FROM doctors WHERE uid = ${params.uid}
-    `;
+    // `?uid=` used to select whose earnings to read, with no ownership check —
+    // a financial-records IDOR across every doctor on the platform. Paging is
+    // still caller-controlled; identity is not.
+    const doctor = { did: auth.data.did };
 
     if (!doctor) {
       return NextResponse.json({

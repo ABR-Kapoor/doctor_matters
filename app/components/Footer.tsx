@@ -61,7 +61,6 @@ export default function Footer() {
               { label: 'Terms & Conditions', href: '/terms-and-conditions' },
               { label: 'Refund Policy', href: '/refund-policy' },
               { label: 'Disclaimer', href: '/disclaimer' },
-              { label: 'Our Vision', href: '/vision' },
               { label: 'About Us', href: '/about' },
               { label: 'Contact Support', href: '/contact' },
             ].map((item) => (

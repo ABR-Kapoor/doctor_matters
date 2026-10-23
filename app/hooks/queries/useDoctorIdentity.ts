@@ -13,7 +13,12 @@ interface DoctorIdentity {
     years_of_experience?: number;
     clinic_name?: string;
     is_verified?: boolean;
-    avg_rating?: number;
+    // AURASUTRA-REVIEWS:identity_rating_fields
+    // Backed by the `trg_refresh_doctor_rating` trigger on `public.reviews`, so
+    // these are now real patient feedback counts rather than seeded numbers.
+    // `avg_rating` is null until the first review exists — callers must handle
+    // null and must not substitute a 0 or a 5.
+    avg_rating?: number | null;
     total_reviews?: number;
     total_consultations?: number;
     bio?: string;
@@ -35,7 +40,7 @@ export function useDoctorIdentity(token: string | null) {
       const { user } = await syncRes.json();
       if (!user?.uid) throw new Error('No user');
 
-      const profileRes = await fetchWithAuth(`/api/doctor/profile?uid=${user.uid}`, token);
+      const profileRes = await fetchWithAuth(`/api/doctor/profile`, token);
       const profileData = await profileRes.json();
       const did = profileData.success ? (profileData.doctor?.did || '') : '';
 
@@ -54,3 +59,5 @@ export function useDoctorIdentity(token: string | null) {
   });
 }
 
+
+// AURASUTRA-REVIEWS:expose_rating_fields

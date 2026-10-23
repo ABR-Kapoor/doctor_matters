@@ -1,5 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireDoctor, requireOwnPrescription } from '@/lib/authz';
+
+/**
+ * Notifies the patient backend that the (now delivered) prescription exists.
+ *
+ * This previously lived in the create route, which fired it while the
+ * prescription was still a draft the patient cannot see. Now that create→draft
+ * and send→delivered are two steps, the notification fires here — after the
+ * sent_to_patient UPDATE succeeds. It targets the patient backend explicitly
+ * (PATIENT_API_URL) and authenticates as a service, because there is no user
+ * session on an inter-backend hop. All failures are swallowed: a notification
+ * problem must never fail the send itself.
+ */
+async function notifyPatientPrescription(payload: Record<string, unknown>): Promise<void> {
+    const patientApi = process.env.PATIENT_API_URL;
+    const serviceSecret = process.env.INTERNAL_SERVICE_SECRET;
+
+    if (!patientApi || !serviceSecret) {
+        console.warn('[send] PATIENT_API_URL or INTERNAL_SERVICE_SECRET unset; patient notification skipped');
+        return;
+    }
+
+    try {
+        const res = await fetch(`${patientApi.replace(/\/$/, '')}/api/notifications/send`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-service-secret': serviceSecret,
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            console.error(`[send] patient notification failed: ${res.status} ${await res.text().catch(() => '')}`);
+        }
+    } catch (err) {
+        console.error('[send] patient notification error:', err);
+    }
+}
 
 // Mirror the DB trigger's frequency-to-times mapping
 function parseFrequencyTimes(frequency: string): string[] {
@@ -39,116 +78,55 @@ function parseDurationDays(duration: string): number {
 }
 
 export async function POST(request: NextRequest, { params }: { params: { prescription_id: string } }) {
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
+
     try {
         const { prescription_id } = params;
-        if (!prescription_id) return NextResponse.json({ success: false, error: 'Prescription ID required' }, { status: 400 });
 
-        // Fix the DB trigger's ambiguous "medicine_name" variable vs column name.
-        // The original trigger uses a local variable named "medicine_name" which conflicts
-        // with the same-named column in the ON CONFLICT clause. Rename it to "v_medicine_name".
-        try {
-            await sql.unsafe(`
-                CREATE OR REPLACE FUNCTION public.auto_create_adherence_records()
-                RETURNS TRIGGER
-                LANGUAGE plpgsql
-                AS $func$
-                DECLARE
-                  medicine_record JSONB;
-                  v_medicine_name TEXT;
-                  dosage_times TEXT[];
-                  time_slot TEXT;
-                  curr_date DATE;
-                  end_date DATE;
-                  duration_days INTEGER;
-                  duration_text TEXT;
-                BEGIN
-                  IF NEW.sent_to_patient = TRUE AND (OLD IS NULL OR OLD.sent_to_patient IS DISTINCT FROM TRUE) THEN
-                    FOR medicine_record IN SELECT * FROM jsonb_array_elements(NEW.medicines)
-                    LOOP
-                      v_medicine_name := medicine_record->>'name';
-                      dosage_times := ARRAY(
-                        SELECT jsonb_array_elements_text(medicine_record->'times')
-                      );
-                      duration_text := LOWER(TRIM(medicine_record->>'duration'));
-                      duration_days := CASE
-                        WHEN duration_text ~ '^\\d+\\s*day'   THEN (regexp_match(duration_text, '(\\d+)'))[1]::INTEGER
-                        WHEN duration_text ~ '^\\d+\\s*week'  THEN (regexp_match(duration_text, '(\\d+)'))[1]::INTEGER * 7
-                        WHEN duration_text ~ '^\\d+\\s*month' THEN (regexp_match(duration_text, '(\\d+)'))[1]::INTEGER * 30
-                        WHEN duration_text ~ '^\\d+\\s*year'  THEN (regexp_match(duration_text, '(\\d+)'))[1]::INTEGER * 365
-                        ELSE 7
-                      END;
-                      IF dosage_times IS NULL OR array_length(dosage_times, 1) IS NULL THEN
-                        DECLARE
-                          freq_text TEXT := LOWER(TRIM(medicine_record->>'frequency'));
-                        BEGIN
-                          IF freq_text ~ 'twice' OR freq_text ~ '2 times' OR freq_text ~ 'morning.*night' OR freq_text ~ 'morning.*evening' THEN
-                            dosage_times := ARRAY['09:00', '21:00'];
-                          ELSIF freq_text ~ 'thrice' OR freq_text ~ '3 times' OR freq_text ~ 'morning.*afternoon.*night' THEN
-                            dosage_times := ARRAY['09:00', '14:00', '21:00'];
-                          ELSIF freq_text ~ '4 times' OR freq_text ~ 'four times' THEN
-                            dosage_times := ARRAY['08:00', '12:00', '16:00', '20:00'];
-                          ELSIF freq_text ~ 'bedtime' OR freq_text ~ 'night' THEN
-                            dosage_times := ARRAY['22:00'];
-                          ELSIF freq_text ~ 'afternoon' OR freq_text ~ 'lunch' THEN
-                            dosage_times := ARRAY['14:00'];
-                          ELSIF freq_text ~ 'morning' OR freq_text ~ 'breakfast' THEN
-                            dosage_times := ARRAY['08:00'];
-                          ELSE
-                            dosage_times := ARRAY['09:00'];
-                          END IF;
-                        END;
-                      END IF;
-                      curr_date := CURRENT_DATE;
-                      end_date := curr_date + duration_days;
-                      IF dosage_times IS NOT NULL AND array_length(dosage_times, 1) > 0 THEN
-                        WHILE curr_date < end_date LOOP
-                          FOREACH time_slot IN ARRAY dosage_times LOOP
-                            INSERT INTO medication_adherence
-                              (prescription_id, pid, medicine_name, scheduled_date, scheduled_time, is_taken, is_skipped, synced)
-                            VALUES
-                              (NEW.prescription_id, NEW.pid, v_medicine_name, curr_date, time_slot::TIME, false, false, false)
-                            ON CONFLICT (prescription_id, medicine_name, scheduled_date, scheduled_time)
-                            DO NOTHING;
-                          END LOOP;
-                          curr_date := curr_date + 1;
-                        END LOOP;
-                      END IF;
-                    END LOOP;
-                  END IF;
-                  RETURN NEW;
-                END;
-                $func$;
-            `);
-            console.log('[Send] DB trigger function patched successfully.');
-        } catch (triggerFixErr: any) {
-            console.warn('[Send] Could not patch trigger function (may lack DDL privileges):', triggerFixErr.message);
-        }
+        // This route had no authentication at all: anyone could mark any
+        // prescription as delivered to a patient and materialise their
+        // medication schedule.
+        const owned = await requireOwnPrescription(auth.data, prescription_id);
+        if (!owned.ok) return owned.response;
 
-        // Fetch the prescription first so we have the data even if the trigger fires
+        const did = auth.data.did;
+
+        // NOTE: this route previously issued `CREATE OR REPLACE FUNCTION
+        // auto_create_adherence_records()` on every single request. That is a DDL
+        // statement executed from an HTTP handler on each send — it took a schema
+        // lock, required elevated privileges, and meant the deployed trigger was
+        // whatever the last request happened to write. The function is now
+        // applied once, manually, to the database.
+        //
+        // Adherence rows are generated by the app-level loop below, which is
+        // idempotent (ON CONFLICT DO NOTHING), so the trigger is a backstop
+        // rather than a requirement.
+
+        // Fetch the prescription first so we have the data even if a trigger fires
         const [existing] = await sql`
-            SELECT * FROM prescriptions WHERE prescription_id = ${prescription_id}
+            SELECT * FROM prescriptions WHERE prescription_id = ${prescription_id} AND did = ${did}
         `;
         if (!existing) {
             return NextResponse.json({ success: false, error: 'Prescription not found' }, { status: 404 });
         }
 
-        // Mark as sent — the fixed trigger (or app-level code below) handles adherence
+        // Mark as sent — the app-level code below generates the adherence records
         let data = existing;
         try {
             const [updated] = await sql`
                 UPDATE prescriptions SET sent_to_patient = true, sent_at = ${new Date().toISOString()}
-                WHERE prescription_id = ${prescription_id}
+                WHERE prescription_id = ${prescription_id} AND did = ${did}
                 RETURNING *
             `;
             if (updated) data = updated;
         } catch (updateErr: any) {
             console.error('[Send] UPDATE failed (likely trigger error):', updateErr.message);
-            // Force the flag via a direct cast to bypass potential trigger issue in some PG versions
             try {
                 const [fallback] = await sql`
                     UPDATE prescriptions SET sent_to_patient = true, sent_at = ${new Date().toISOString()},
                         updated_at = ${new Date().toISOString()}
-                    WHERE prescription_id = ${prescription_id} AND sent_to_patient = false
+                    WHERE prescription_id = ${prescription_id} AND did = ${did} AND sent_to_patient = false
                     RETURNING *
                 `;
                 if (fallback) data = fallback;
@@ -201,6 +179,12 @@ export async function POST(request: NextRequest, { params }: { params: { prescri
         }
 
         console.log(`[Send] Prescription ${prescription_id} sent. Generated ${insertedCount} adherence records.`);
+
+        // Fire only now: the prescription just became visible to the patient.
+        await notifyPatientPrescription({
+            type: 'prescription_created',
+            data: { patientId: pid, doctorId: did, diagnosis: data.diagnosis, medicines, instructions: data.instructions },
+        });
 
         return NextResponse.json({
             success: true,

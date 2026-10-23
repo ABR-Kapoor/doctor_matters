@@ -1,27 +1,16 @@
 import { NextResponse } from 'next/server';
-import { verifyClerkUser } from '@/lib/clerk-verify';
 import sql from '@/lib/db';
+import { requireDoctor } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(request: Request) {
+    const auth = await requireDoctor();
+    if (!auth.ok) return auth.response;
+
     try {
-        const kindeUser = await verifyClerkUser();
-
-        if (!kindeUser || !kindeUser.id) {
-            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-        }
-
-        const [user] = await sql`SELECT uid FROM users WHERE auth_id = ${kindeUser.id}`;
-        if (!user) {
-            return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
-        }
-
-        const [doctor] = await sql`SELECT did FROM doctors WHERE uid = ${user.uid}`;
-        if (!doctor) {
-            return NextResponse.json({ success: false, error: 'Doctor record not found' }, { status: 404 });
-        }
+        const doctor = { did: auth.data.did };
 
         // Get patients from doctor_patient_relationships
         const relationships = await sql`

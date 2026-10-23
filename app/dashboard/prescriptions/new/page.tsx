@@ -70,7 +70,7 @@ export default function NewPrescriptionPage() {
 
       if (!user) return;
 
-      const profileResponse = await fetchWithAuth(`/api/doctor/profile?uid=${user.uid}`, token);
+      const profileResponse = await fetchWithAuth(`/api/doctor/profile`, token);
       const profileData = await profileResponse.json();
 
       if (!profileData.success) return;
@@ -131,7 +131,7 @@ export default function NewPrescriptionPage() {
       const syncResponse = await fetchWithAuth('/api/sync-user', token);
       const { user } = await syncResponse.json();
 
-      const profileResponse = await fetchWithAuth(`/api/doctor/profile?uid=${user.uid}`, token);
+      const profileResponse = await fetchWithAuth(`/api/doctor/profile`, token);
       const profileData = await profileResponse.json();
 
       if (!profileData.success) {
