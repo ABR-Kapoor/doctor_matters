@@ -452,7 +452,7 @@ function AppointmentsContent() {
                                   : 'Complete Visit'}
                               </TranslatedText>
                             </button>
-                            {apt.status === 'in_progress' && (
+                            {apt.status === 'in_progress' && (apt.mode !== 'online' || !!((apt as any).call_ended_at || (typeof (apt as any).call_duration_minutes === 'number' && (apt as any).call_duration_minutes > 0))) && (
                               <button
                                 onClick={() => updateAppointmentStatus(apt.aid, 'completed')}
                                 className="btn-secondary py-2 px-4 text-xs bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"
