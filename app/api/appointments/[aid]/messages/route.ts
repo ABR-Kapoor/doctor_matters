@@ -46,8 +46,34 @@ export async function GET(
               AND read_at IS NULL
         `;
 
-        // Can chat if appointment is confirmed or in_progress (and not cancelled)
-        const canChat = appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'completed';
+        // Mark any message notifications for this appointment as read for this doctor
+        try {
+            await sql`
+                UPDATE notifications
+                SET is_read = true, read_at = NOW()
+                WHERE uid = ${auth.data.uid}
+                  AND is_read = false
+                  AND (
+                    (metadata->>'aid') = ${aid}
+                    OR title ILIKE '%New Message%'
+                  )
+            `;
+        } catch (notifErr) {
+            console.warn('[Messages GET] Failed to clear doctor notification:', notifErr);
+        }
+
+        // Can chat if appointment is confirmed, in_progress, completed, or scheduled
+        const statusNorm = String(appointment.status || '').trim().toLowerCase();
+        const canChat = ['confirmed', 'in_progress', 'completed', 'scheduled', 'booked', 'requested'].includes(statusNorm) && statusNorm !== 'cancelled';
+
+        // Load patient details if not present
+        let patientName = 'Patient';
+        try {
+            const [pt] = await sql`
+                SELECT u.name FROM patients p JOIN users u ON p.uid = u.uid WHERE p.pid = ${appointment.pid} LIMIT 1
+            `;
+            if (pt?.name) patientName = pt.name;
+        } catch {}
 
         return NextResponse.json({
             success: true,
@@ -57,6 +83,7 @@ export async function GET(
                 pid: appointment.pid,
                 status: appointment.status,
                 mode: appointment.mode,
+                patient_name: patientName,
             },
             appointmentStatus: appointment.status,
             canChat,
@@ -125,6 +152,82 @@ export async function POST(
             ...newMessage,
             sender_name: auth.data.name || 'Doctor',
         };
+
+        // Notify the recipient (patient) with batch notification
+        try {
+            const [pt] = await sql`
+                SELECT p.uid as patient_uid, u.name as patient_name
+                FROM patients p
+                JOIN users u ON p.uid = u.uid
+                WHERE p.pid = ${appointment.pid}
+                LIMIT 1
+            `;
+
+            if (pt?.patient_uid) {
+                // Count all unread messages from doctor for this patient on this appointment
+                const [unreadDoc] = await sql`
+                    SELECT count(*)::int as count
+                    FROM appointment_messages
+                    WHERE aid = ${aid}
+                      AND sender_role = 'doctor'
+                      AND read_at IS NULL
+                `;
+                const unreadCount = unreadDoc?.count || 1;
+                const docDisplayName = auth.data.name ? `Dr. ${auth.data.name}` : 'Your doctor';
+                const notifTitle = unreadCount > 1 
+                    ? `New Messages from ${docDisplayName} (${unreadCount})` 
+                    : `New Message from ${docDisplayName}`;
+                const notifBody = unreadCount > 1
+                    ? `You have ${unreadCount} new messages: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`
+                    : content.slice(0, 120);
+
+                // Check for existing unread chat notification for this appointment to batch update
+                const [existingNotif] = await sql`
+                    SELECT notification_id FROM notifications
+                    WHERE uid = ${pt.patient_uid}
+                      AND is_read = false
+                      AND type = 'chat_message'
+                      AND (metadata->>'aid') = ${aid}
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                `;
+
+                if (existingNotif) {
+                    await sql`
+                        UPDATE notifications
+                        SET title = ${notifTitle},
+                            body = ${notifBody},
+                            created_at = NOW(),
+                            metadata = ${JSON.stringify({ aid, count: unreadCount, sender_role: 'doctor' })}
+                        WHERE notification_id = ${existingNotif.notification_id}
+                    `;
+                } else {
+                    await sql`
+                        INSERT INTO notifications (
+                            uid,
+                            title,
+                            body,
+                            type,
+                            is_read,
+                            action_url,
+                            metadata,
+                            created_at
+                        ) VALUES (
+                            ${pt.patient_uid},
+                            ${notifTitle},
+                            ${notifBody},
+                            'chat_message',
+                            false,
+                            ${`/chat/${aid}`},
+                            ${JSON.stringify({ aid, count: unreadCount, sender_role: 'doctor' })},
+                            NOW()
+                        )
+                    `;
+                }
+            }
+        } catch (notifErr) {
+            console.error('[API Messages POST] Failed to trigger patient notification:', notifErr);
+        }
 
         return NextResponse.json({
             success: true,
