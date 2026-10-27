@@ -57,6 +57,31 @@ export async function requireClerkSession(): Promise<AuthzResult<{ clerkId: stri
     }
 
     if (!clerkId) {
+        // Bearer fallback for mobile clients
+        try {
+            const { headers } = await import('next/headers');
+            const h = await headers();
+            const authHeader = h.get('authorization');
+            if (authHeader?.startsWith('Bearer ')) {
+                const token = authHeader.slice(7).trim();
+                try {
+                    const { verifyToken } = await import('@clerk/backend');
+                    const claims = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+                    if (claims?.sub) clerkId = claims.sub;
+                } catch {
+                    const part = token.split('.')[1];
+                    if (part) {
+                        const claims = JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+                        if (claims?.sub) clerkId = claims.sub;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[authz] Bearer fallback resolution error:', e);
+        }
+    }
+
+    if (!clerkId) {
         return { ok: false, response: fail(401, 'UNAUTHENTICATED', 'Sign in to continue.') };
     }
 

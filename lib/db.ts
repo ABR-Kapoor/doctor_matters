@@ -16,7 +16,22 @@ const isLocalDb =
   dbUrl.hostname.startsWith('10.') ||
   dbUrl.searchParams.get('sslmode') === 'disable';
 
+let host = dbUrl.hostname;
+let port = Number(dbUrl.port) || 5432;
+let username = dbUrl.username;
+
+if (host.startsWith('db.') && host.endsWith('.supabase.co')) {
+    const projectRef = host.replace(/^db\./, '').replace(/\.supabase\.co$/, '');
+    host = 'aws-0-ap-south-1.pooler.supabase.com';
+    port = 6543;
+    if (username === 'postgres') {
+        username = 'postgres.' + projectRef;
+    }
+}
+
 const sql = globalForPostgres.sql ?? postgres({
+    host,
+    port,
     host: dbUrl.hostname,
     port: Number(dbUrl.port) || 5432,
     database: dbUrl.pathname.replace(/^\//, ''),
