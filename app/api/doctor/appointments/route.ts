@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 
         const enrichedAppointments = allAppointments.map((apt: any) => ({
             ...apt, complaint_description: apt.chief_complaint, payment_status: apt.payment_status,
-            unread_messages_count: unreadMap.get(apt.aid) || 0,
+            unread_messages_count: unreadMap.get(apt.aid) || 0, unreadMessagesCount: unreadMap.get(apt.aid) || 0,
             patient: (() => {
                 const p = patients?.find(pat => pat.pid === apt.pid);
                 return p ? { pid: p.pid, uid: p.uid, user: { name: p.name, email: p.email, phone: p.phone, profile_image_url: p.profile_image_url } } : null;

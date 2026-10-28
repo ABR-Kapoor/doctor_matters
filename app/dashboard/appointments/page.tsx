@@ -61,10 +61,20 @@ function MiniCalendar({ appointments }: { appointments: Appointment[] }) {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  // Count appointments per date
+  // Count active appointments per date (exclude completed and cancelled)
   const aptCountMap = appointments.reduce<Record<string, number>>((acc, a) => {
-    const d = new Date(a.scheduled_date);
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!a) return acc;
+    const s = String(a.status || '').toLowerCase();
+    if (s === 'completed' || s === 'complete' || s === 'done' || s === 'cancelled' || s === 'canceled' || s === 'rejected') {
+      return acc;
+    }
+
+    const dateStr = String(a.scheduled_date || '').slice(0, 10);
+    if (!dateStr || !dateStr.includes('-')) return acc;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) return acc;
+
+    const key = `${y}-${m - 1}-${d}`;
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
@@ -534,12 +544,11 @@ function AppointmentsContent() {
           </div>
         </div>
 
-        {/* Mini Calendar */}
+        {/* Mini Calendar - only active/pending/confirmed/today appointments */}
         <MiniCalendar appointments={[
           ...aptsData.pending,
           ...aptsData.confirmed,
           ...aptsData.today,
-          ...aptsData.completed,
         ]} />
 
         {/* Today's Appointments */}

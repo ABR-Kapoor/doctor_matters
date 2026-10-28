@@ -21,7 +21,7 @@ import {
  * the mutation signatures have to allow it — declaring `string | null` only made
  * every call site a type error.
  */
-type AuthToken = string | null | (() => string | null | Promise<string | null>);
+import type { AuthToken } from '@aurasutra/doctor-shared';
 
 export function useUpdateAppointmentStatus() {
   const queryClient = useQueryClient();
@@ -30,13 +30,53 @@ export function useUpdateAppointmentStatus() {
     mutationFn: async ({ aid, status, uid, token }: { aid: string; status: string; uid: string; token: AuthToken }) => {
       return await apiUpdateAppointmentStatus(API_BASE_URL, token, aid, status);
     },
+    onMutate: async ({ aid, status, uid }: { aid: string; status: string; uid: string; token: AuthToken }) => {
+      await queryClient.cancelQueries({ queryKey: ['doctorAppointments', uid] });
+      const previous = queryClient.getQueryData(['doctorAppointments', uid]);
+
+      queryClient.setQueryData(['doctorAppointments', uid], (old: any) => {
+        if (!old) return old;
+        const aidStr = String(aid);
+        const updateItem = (a: any) => (String(a?.aid ?? a?.id ?? a?._id) === aidStr ? { ...a, status } : a);
+
+        const pending = (old.pending || []).map(updateItem).filter((a: any) => a.status === 'pending' || a.status === 'scheduled');
+        const confirmed = (old.confirmed || []).map(updateItem).filter((a: any) => a.status === 'confirmed' || a.status === 'in_progress');
+        const today = (old.today || []).map(updateItem).filter((a: any) => a.status !== 'completed' && a.status !== 'cancelled');
+
+        const allApts = [...(old.pending || []), ...(old.confirmed || []), ...(old.today || []), ...(old.completed || [])];
+        const target = allApts.find((a: any) => String(a?.aid ?? a?.id ?? a?._id) === aidStr);
+        const updated = target ? { ...target, status } : null;
+
+        const completed = (old.completed || []).filter((a: any) => String(a?.aid ?? a?.id ?? a?._id) !== aidStr);
+        if (status === 'completed' && updated) {
+          completed.unshift(updated);
+        }
+
+        const cancelled = (old.cancelled || []).filter((a: any) => String(a?.aid ?? a?.id ?? a?._id) !== aidStr);
+        if (status === 'cancelled' && updated) {
+          cancelled.unshift(updated);
+        }
+
+        return {
+          ...old,
+          pending,
+          confirmed,
+          today,
+          completed,
+          cancelled,
+        };
+      });
+
+      return { previous };
+    },
+    onError: (_err: any, { uid }: any, ctx: any) => {
+      if (ctx?.previous) queryClient.setQueryData(['doctorAppointments', uid], ctx.previous);
+      Toast.show({ type: 'error', text1: 'Failed to update appointment' });
+    },
     onSuccess: (data: any) => {
       Toast.show({ type: 'success', text1: `Appointment ${data.appointment?.status || 'updated'}` });
       queryClient.invalidateQueries({ queryKey: ['doctorAppointments'] });
     },
-    onError: () => {
-      Toast.show({ type: 'error', text1: 'Failed to update appointment' });
-    }
   });
 }
 
