@@ -23,25 +23,36 @@ export function useUpdateAppointmentStatus() {
       await queryClient.cancelQueries({ queryKey: ['doctor', 'appointments', uid] });
       const previous = queryClient.getQueryData(['doctor', 'appointments', uid]);
 
-      // Optimistic update � move appointment to the right bucket
+      // Optimistic update — move appointment to the right bucket
       queryClient.setQueryData(['doctor', 'appointments', uid], (old: any) => {
         if (!old) return old;
-        const allApts = [...old.pending, ...old.confirmed, ...old.today, ...old.completed, ...old.cancelled];
-        const apt = allApts.find((a: any) => a.aid === aid);
-        if (!apt) return old;
-        const updated = { ...apt, status };
-        const buckets: any = { pending: [], confirmed: [], today: [], completed: [], cancelled: [] };
-        allApts.forEach((a: any) => {
-          if (a.aid === aid) {
-            const bucket = ['pending', 'confirmed', 'today', 'completed', 'cancelled'].includes(status)
-              ? status : 'completed';
-            buckets[bucket].push(updated);
-          } else {
-            const b = (a.status === 'scheduled' || a.status === 'pending') ? 'pending' : (a.status as string);
-            if (buckets[b]) buckets[b].push(a);
-          }
-        });
-        return buckets;
+        const updateItem = (a: any) => (a.aid === aid ? { ...a, status } : a);
+
+        const pending = (old.pending || []).map(updateItem).filter((a: any) => a.status === 'pending' || a.status === 'scheduled');
+        const confirmed = (old.confirmed || []).map(updateItem).filter((a: any) => a.status === 'confirmed' || a.status === 'in_progress');
+        const today = (old.today || []).map(updateItem).filter((a: any) => a.status !== 'completed' && a.status !== 'cancelled');
+
+        const allApts = [...(old.pending || []), ...(old.confirmed || []), ...(old.today || []), ...(old.completed || [])];
+        const target = allApts.find((a: any) => a.aid === aid);
+        const updated = target ? { ...target, status } : null;
+
+        const completed = (old.completed || []).filter((a: any) => a.aid !== aid);
+        if (status === 'completed' && updated) {
+          completed.unshift(updated);
+        }
+
+        const cancelled = (old.cancelled || []).filter((a: any) => a.aid !== aid);
+        if (status === 'cancelled' && updated) {
+          cancelled.unshift(updated);
+        }
+
+        return {
+          pending,
+          confirmed,
+          today,
+          completed,
+          cancelled,
+        };
       });
 
       return { previous };

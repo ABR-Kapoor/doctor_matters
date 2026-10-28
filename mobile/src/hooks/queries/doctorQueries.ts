@@ -7,7 +7,7 @@ import {
   apiGetDoctorPrescriptions,
 } from '@aurasutra/doctor-shared';
 
-type AuthToken = string | null | (() => string | null | Promise<string | null>);
+import type { AuthToken } from '@aurasutra/doctor-shared';
 
 export function useDoctorIdentity(token: AuthToken) {
   return useQuery({
@@ -244,6 +244,7 @@ export function useDoctorAppointments(uid: string | null, token: AuthToken, hasA
       return normalizeAppointments(data?.appointments ?? data?.data ?? data);
     },
     enabled: !!token && !!uid,
+    refetchInterval: 3500,
   });
 }
 

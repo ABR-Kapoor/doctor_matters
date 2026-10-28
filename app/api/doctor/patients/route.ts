@@ -12,18 +12,23 @@ export async function GET(request: Request) {
     try {
         const doctor = { did: auth.data.did };
 
-        // Get patients from doctor_patient_relationships
-        const relationships = await sql`
-            SELECT pid, total_appointments, last_appointment_date, first_appointment_date
-            FROM doctor_patient_relationships
-            WHERE did = ${doctor.did} AND relationship_status = 'active'
+        // Query appointments for this doctor to identify patients who have booked appointments
+        const appointmentRows = await sql`
+            SELECT 
+                pid, 
+                COUNT(*)::int AS total_appointments,
+                MAX(scheduled_date) AS last_appointment_date,
+                MIN(scheduled_date) AS first_appointment_date
+            FROM appointments
+            WHERE did = ${doctor.did}
+            GROUP BY pid
         `;
 
-        if (!relationships || relationships.length === 0) {
+        if (!appointmentRows || appointmentRows.length === 0) {
             return NextResponse.json({ success: true, patients: [] });
         }
 
-        const patientIds = relationships.map(r => r.pid);
+        const patientIds = appointmentRows.map(r => r.pid);
 
         // Get patient details with user info
         const patients = await sql`
@@ -36,7 +41,7 @@ export async function GET(request: Request) {
 
         // Enrich with adherence and prescription data
         const enrichedPatients = await Promise.all(patients.map(async (patient) => {
-            const relationship = relationships.find(r => r.pid === patient.pid);
+            const aptSummary = appointmentRows.find(r => r.pid === patient.pid);
 
             const [prescriptionCount] = await sql`
                 SELECT count(*)::int as count FROM prescriptions
@@ -61,9 +66,9 @@ export async function GET(request: Request) {
             return {
                 ...patient,
                 user: { name: patient.name, email: patient.email, phone: patient.phone, profile_image_url: patient.profile_image_url },
-                total_appointments: relationship?.total_appointments || 0,
-                last_appointment_date: relationship?.last_appointment_date,
-                first_appointment_date: relationship?.first_appointment_date,
+                total_appointments: aptSummary?.total_appointments || 0,
+                last_appointment_date: aptSummary?.last_appointment_date,
+                first_appointment_date: aptSummary?.first_appointment_date,
                 adherenceRate,
                 prescriptionCount: prescriptionCount?.count || 0,
                 recentAdherence: adherenceRecords?.slice(-7) || [],

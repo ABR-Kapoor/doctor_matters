@@ -546,7 +546,7 @@ export default function AppointmentsScreen() {
                           <Text style={[styles.quickActionTitle, { color: '#048256', fontWeight: '700' }]}>
                             <TranslatedText>Chat</TranslatedText>
                           </Text>
-                          {Number(apt.unread_messages_count) > 0 && (
+                          {Number(apt.unread_messages_count || apt.unreadMessagesCount || 0) > 0 && (
                             <View style={{
                               marginLeft: 6,
                               backgroundColor: '#EF4444',
@@ -558,7 +558,7 @@ export default function AppointmentsScreen() {
                               justifyContent: 'center',
                             }}>
                               <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700' }}>
-                                {apt.unread_messages_count > 99 ? '99+' : apt.unread_messages_count}
+                                {(apt.unread_messages_count || apt.unreadMessagesCount) > 99 ? '99+' : (apt.unread_messages_count || apt.unreadMessagesCount)}
                               </Text>
                             </View>
                           )}

@@ -22,15 +22,22 @@ export function MiniCalendar({ appointments }: { appointments: any[] }) {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
-  // Set of days in currently viewed month that have a confirmed/in_progress appointment
+  // Set of days in currently viewed month that have an active appointment (excluding completed/cancelled)
   const confirmedDays = React.useMemo(() => {
     const daysSet = new Set<number>();
     if (!Array.isArray(appointments)) return daysSet;
 
     appointments.forEach((apt) => {
       const status = String(apt?.status || '').toLowerCase();
-      // Only confirmed or in_progress consultations
-      if (status !== 'confirmed' && status !== 'in_progress') return;
+      // Exclude completed or cancelled consultations
+      if (status === 'completed' || status === 'complete' || status === 'done' ||
+          status === 'cancelled' || status === 'canceled' || status === 'rejected') {
+        return;
+      }
+      // Only active consultations
+      if (status !== 'confirmed' && status !== 'in_progress' && status !== 'pending' && status !== 'scheduled' && status !== 'booked') {
+        return;
+      }
 
       const dateStr = String(apt?.scheduled_date ?? apt?.scheduledDate ?? apt?.date ?? '').slice(0, 10);
       if (!dateStr || !dateStr.includes('-')) return;

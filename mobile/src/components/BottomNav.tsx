@@ -4,11 +4,34 @@ import { useRouter, usePathname } from 'expo-router';
 import { Home, Users, Calendar, Pill, Banknote } from 'lucide-react-native';
 import { COLORS, FONTS } from '@/constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const totalUnread = React.useMemo(() => {
+    try {
+      const matches = queryClient.getQueriesData<any>({ queryKey: ['doctorAppointments'] });
+      let count = 0;
+      const seen = new Set();
+      for (const [, data] of matches) {
+        if (!data) continue;
+        const list = [...(data.confirmed || []), ...(data.today || []), ...(data.pending || [])];
+        for (const apt of list) {
+          const id = apt?.aid ?? apt?.id ?? apt?._id;
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            count += Number(apt.unread_messages_count || apt.unreadMessagesCount || 0);
+          }
+        }
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  }, [queryClient, pathname]);
 
   // Hide on certain screens
   if (pathname.includes('video-call') || pathname.includes('book-appointment')) {
@@ -63,6 +86,13 @@ export default function BottomNav() {
           activeOpacity={0.85}
         >
           <Calendar size={26} color={COLORS.white} />
+          {totalUnread > 0 && (
+            <View style={styles.centerBadge}>
+              <Text style={styles.centerBadgeText}>
+                {totalUnread > 99 ? '99+' : totalUnread}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -131,6 +161,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
+  },
+  centerBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  centerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontFamily: FONTS.bold,
+    fontWeight: '700',
   },
   centerButton: {
     width: 54,
