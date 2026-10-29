@@ -5,7 +5,7 @@ const globalForPostgres = globalThis as unknown as {
 };
 
 // Clean string in case quotes were included in environment
-const rawDbUrl = (process.env.DATABASE_URL || '').replace(/^["']|["']$/g, '');
+const rawDbUrl = (process.env.DATABASE_URL || '').replace(/^[']|[']$/g, '');
 const dbUrl = new URL(rawDbUrl);
 
 // Only treat as local if hostname is actually localhost or a private LAN IP.
@@ -32,10 +32,8 @@ if (host.startsWith('db.') && host.endsWith('.supabase.co')) {
 const sql = globalForPostgres.sql ?? postgres({
     host,
     port,
-    host: dbUrl.hostname,
-    port: Number(dbUrl.port) || 5432,
     database: dbUrl.pathname.replace(/^\//, ''),
-    username: dbUrl.username,
+    username,
     password: decodeURIComponent(dbUrl.password),
     // Local Docker Supabase container does NOT support TLS, so ssl must be false
     ssl: isLocalDb ? false : { rejectUnauthorized: false },

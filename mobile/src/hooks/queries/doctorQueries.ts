@@ -244,7 +244,7 @@ export function useDoctorAppointments(uid: string | null, token: AuthToken, hasA
       return normalizeAppointments(data?.appointments ?? data?.data ?? data);
     },
     enabled: !!token && !!uid,
-    refetchInterval: 3500,
+    refetchInterval: 20000,
   });
 }
 
