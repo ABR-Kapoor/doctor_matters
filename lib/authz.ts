@@ -46,14 +46,14 @@ function fail(status: number, error: string, message: string, extra?: Record<str
  * `auth()` resolves both the web session cookie and the mobile
  * `Authorization: Bearer` token, because `clerkMiddleware` matches `/api`.
  */
-export async function requireClerkSession(): Promise<AuthzResult<{ clerkId: string }>> {
+async function resolveClerkId(): Promise<string | null> {
     let clerkId: string | null = null;
 
     try {
         const session = await auth();
         clerkId = session.userId;
     } catch {
-        return { ok: false, response: fail(401, 'UNAUTHENTICATED', 'Sign in to continue.') };
+        clerkId = null;
     }
 
     if (!clerkId) {
@@ -81,6 +81,11 @@ export async function requireClerkSession(): Promise<AuthzResult<{ clerkId: stri
         }
     }
 
+    return clerkId;
+}
+
+export async function requireClerkSession(): Promise<AuthzResult<{ clerkId: string }>> {
+    const clerkId = await resolveClerkId();
     if (!clerkId) {
         return { ok: false, response: fail(401, 'UNAUTHENTICATED', 'Sign in to continue.') };
     }
@@ -92,13 +97,15 @@ export async function requireClerkSession(): Promise<AuthzResult<{ clerkId: stri
  * Resolves the signed-in Clerk user to its `users` row.
  */
 export async function requireSessionUser(): Promise<AuthzResult<SessionUser>> {
-    const clerk = await requireClerkSession();
-    if (!clerk.ok) return clerk;
+    const clerkId = await resolveClerkId();
+    if (!clerkId) {
+        return { ok: false, response: fail(401, 'UNAUTHENTICATED', 'Sign in to continue.') };
+    }
 
     const [user] = await sql`
         SELECT uid, role, email, name
         FROM users
-        WHERE auth_id = ${clerk.data.clerkId}
+        WHERE auth_id = ${clerkId}
         LIMIT 1
     `;
 
@@ -112,7 +119,7 @@ export async function requireSessionUser(): Promise<AuthzResult<SessionUser>> {
     return {
         ok: true,
         data: {
-            clerkId: clerk.data.clerkId,
+            clerkId,
             uid: user.uid,
             role: user.role,
             email: user.email ?? null,
@@ -137,13 +144,16 @@ export async function requireSessionUser(): Promise<AuthzResult<SessionUser>> {
  * already has a `doctors` row still passes, so no existing doctor is affected.
  */
 export async function requireDoctorAccount(): Promise<AuthzResult<DoctorAccount>> {
-    const clerk = await requireClerkSession();
-    if (!clerk.ok) return clerk;
+    const clerkId = await resolveClerkId();
+    if (!clerkId) {
+        return { ok: false, response: fail(401, 'UNAUTHENTICATED', 'Sign in to continue.') };
+    }
 
     const [user] = await sql`
-        SELECT uid, role, email, name
-        FROM users
-        WHERE auth_id = ${clerk.data.clerkId}
+        SELECT u.uid, u.role, u.email, u.name, d.did
+        FROM users u
+        LEFT JOIN doctors d ON d.uid = u.uid
+        WHERE u.auth_id = ${clerkId}
         LIMIT 1
     `;
 
@@ -154,11 +164,8 @@ export async function requireDoctorAccount(): Promise<AuthzResult<DoctorAccount>
         };
     }
 
-    let did: string | null = null;
+    const did: string | null = user?.did ?? null;
     if (user) {
-        const [doctor] = await sql`SELECT did FROM doctors WHERE uid = ${user.uid} LIMIT 1`;
-        did = doctor?.did ?? null;
-
         const isPortalRole = user.role === 'doctor' || user.role === 'admin';
         if (!isPortalRole && !did) {
             return {
@@ -175,7 +182,7 @@ export async function requireDoctorAccount(): Promise<AuthzResult<DoctorAccount>
     return {
         ok: true,
         data: {
-            clerkId: clerk.data.clerkId,
+            clerkId,
             uid: user?.uid ?? null,
             did,
             role: user?.role ?? 'doctor',
