@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AccessToken } from 'livekit-server-sdk';
-import sql from '@/lib/db';
-import { requireDoctor, loadAppointmentForToken } from '@/lib/authz';
+import { requireDoctor } from '@/lib/authz';
+import { callErrorResponse, getActiveSessionForToken } from '@/lib/callSessions';
 
 // A consultation is far shorter than this, but a long-lived token means a client that
 // reconnects mid-call (network handover, backgrounding) does not have to fetch a new one.
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     const auth = await requireDoctor();
     if (!auth.ok) return auth.response;
 
-    const { clerkId, did, name } = auth.data;
+    const { clerkId, uid, name } = auth.data;
 
     try {
         const body = await req.json();
@@ -37,13 +37,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: false, error: 'Invalid room' }, { status: 400 });
         }
 
-        const appointment = await loadAppointmentForToken(aid);
-        if (!appointment) {
-            return NextResponse.json({ success: false, error: 'Appointment not found' }, { status: 404 });
-        }
-
-        if (appointment.did !== did) {
-            return NextResponse.json({ success: false, error: 'You are not the doctor for this consultation' }, { status: 403 });
+        const active = await getActiveSessionForToken({ uid, role: 'doctor' }, aid);
+        if (!active.ok) {
+            const error = callErrorResponse(active);
+            return NextResponse.json(error.body, { status: error.status });
         }
 
         const apiKey = process.env.LIVEKIT_API_KEY;

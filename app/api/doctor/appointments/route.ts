@@ -3,6 +3,7 @@ import sql from '@/lib/db';
 import { z } from 'zod';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { requireDoctor, requireOwnAppointment } from '@/lib/authz';
+import { closeOpenCallForAppointment, hasOpenCallForAppointment } from '@/lib/callSessions';
 
 const updateSchema = z.object({
     aid: z.string().uuid(),
@@ -36,7 +37,14 @@ export async function GET(request: NextRequest) {
                    rr.amount as refund_amount,
                    rr.reason as refund_reason,
                    rr.status as refund_status,
-                   (rr.refund_id IS NOT NULL) as refund_requested
+                   (rr.refund_id IS NOT NULL) as refund_requested,
+                   (((a.scheduled_date + a.scheduled_time) AT TIME ZONE 'Asia/Kolkata') - interval '10 minutes') AS call_opens_at,
+                   (
+                       a.mode = 'online'
+                       AND a.status IN ('confirmed', 'in_progress')
+                       AND NOW() >= (((a.scheduled_date + a.scheduled_time) AT TIME ZONE 'Asia/Kolkata') - interval '10 minutes')
+                   ) AS call_available,
+                   NOW() AS server_time
             FROM appointments a
             LEFT JOIN refund_requests rr ON a.aid = rr.aid
             WHERE a.did = ${doctor.did}
@@ -69,6 +77,7 @@ export async function GET(request: NextRequest) {
 
         const enrichedAppointments = allAppointments.map((apt: any) => ({
             ...apt, complaint_description: apt.chief_complaint, payment_status: apt.payment_status,
+            callAvailable: Boolean(apt.call_available), callOpensAt: apt.call_opens_at, serverTime: apt.server_time,
             unread_messages_count: unreadMap.get(apt.aid) || 0, unreadMessagesCount: unreadMap.get(apt.aid) || 0,
             patient: (() => {
                 const p = patients?.find(pat => pat.pid === apt.pid);
@@ -137,30 +146,76 @@ export async function PATCH(request: NextRequest) {
 
         // Mode-only change
         if (mode && !status) {
+            if (mode !== 'online' && await hasOpenCallForAppointment(aid)) {
+                return NextResponse.json({
+                    success: false,
+                    code: 'CALL_IN_PROGRESS',
+                    error: 'End the active call before changing this appointment to in-person.',
+                }, { status: 409 });
+            }
+
             const [data] = await sql`
                 UPDATE appointments SET mode = ${mode} WHERE aid = ${aid} AND did = ${auth.data.did} RETURNING *
             `;
             try {
                 const [pt] = await sql`
-                    SELECT p.uid as patient_uid, u.name as patient_name 
+                    SELECT p.uid as patient_uid, p.pid as patient_pid, u.name as patient_name, u.profile_image_url as patient_image
                     FROM appointments ap 
                     JOIN patients p ON ap.pid = p.pid 
                     JOIN users u ON p.uid = u.uid 
                     WHERE ap.aid = ${aid}
                 `;
+                const [docUser] = await sql`
+                    SELECT u.name as doctor_name, u.profile_image_url as doctor_image
+                    FROM doctors d
+                    JOIN users u ON d.uid = u.uid
+                    WHERE d.did = ${auth.data.did}
+                `;
+                const rawDocName = docUser?.doctor_name || 'your doctor';
+                const docName = rawDocName.replace(/^Dr\.?\s+/i, '');
+                const displayDocName = `Dr. ${docName}`;
+                const doctorImage = docUser?.doctor_image || null;
+                const patientImage = pt?.patient_image || null;
+                const patientName = pt?.patient_name || 'patient';
                 const modeLabel = mode === 'online' ? 'Online Video Consultation' : 'In-Clinic Visit';
                 const ptMsg = 'Your appointment mode has been changed to ' + modeLabel + '.';
-                const docMsg = 'Appointment mode with ' + (pt?.patient_name || 'patient') + ' was changed to ' + modeLabel + '.';
+                const docMsg = 'Appointment mode with ' + patientName + ' was changed to ' + modeLabel + '.';
 
                 if (pt?.patient_uid) {
                     await sql`
-                        INSERT INTO notifications (uid, title, body, type, is_read)
-                        VALUES (${pt.patient_uid}, 'Visit Mode Updated', ${ptMsg}, 'mode_change', false)
+                        INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                        VALUES (
+                            ${pt.patient_uid},
+                            'Visit Mode Updated',
+                            ${ptMsg},
+                            'appointment',
+                            false,
+                            ${JSON.stringify({
+                                image_url: doctorImage,
+                                avatar_url: doctorImage,
+                                doctor_name: displayDocName,
+                                did: auth.data.did,
+                                appointment_id: aid,
+                            })}::jsonb
+                        )
                     `;
                 }
                 await sql`
-                    INSERT INTO notifications (uid, title, body, type, is_read)
-                    VALUES (${auth.data.uid}, 'Visit Mode Updated', ${docMsg}, 'mode_change', false)
+                    INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                    VALUES (
+                        ${auth.data.uid},
+                        'Visit Mode Updated',
+                        ${docMsg},
+                        'appointment',
+                        false,
+                        ${JSON.stringify({
+                            image_url: patientImage,
+                            avatar_url: patientImage,
+                            patient_name: patientName,
+                            pid: pt?.patient_pid || data.pid,
+                            appointment_id: aid,
+                        })}::jsonb
+                    )
                 `;
             } catch (notifErr) {
                 console.error('Mode change notification error:', notifErr);
@@ -177,9 +232,14 @@ export async function PATCH(request: NextRequest) {
         let durationMinutes: number | null = null;
 
         if (status === 'cancelled' || status === 'completed') {
+            const callSession = await closeOpenCallForAppointment(
+                aid,
+                status === 'cancelled' ? 'appointment_cancelled' : 'appointment_completed',
+            );
+            const effectiveCallStart = callSession.acceptedAt || existing.call_started_at;
             callEndedAt = nowIso;
-            if (existing.call_started_at) {
-                const rawMinutes = (new Date(nowIso).getTime() - new Date(existing.call_started_at).getTime()) / 60000;
+            if (effectiveCallStart) {
+                const rawMinutes = (new Date(nowIso).getTime() - new Date(effectiveCallStart).getTime()) / 60000;
                 // duration_minutes / call_duration_minutes are integer columns, and a stale
                 // call_started_at can yield a fractional or absurdly large value.
                 durationMinutes = Math.min(1440, Math.max(0, Math.round(rawMinutes)));
@@ -232,17 +292,37 @@ export async function PATCH(request: NextRequest) {
         // In-app notifications for status transitions (confirmed, in_progress, completed, cancelled)
         try {
             const [pt] = await sql`
-                SELECT p.uid as patient_uid, u.name as patient_name 
+                SELECT p.uid as patient_uid, p.pid as patient_pid, u.name as patient_name, u.profile_image_url as patient_image
                 FROM appointments ap 
                 JOIN patients p ON ap.pid = p.pid 
                 JOIN users u ON p.uid = u.uid 
                 WHERE ap.aid = ${aid}
             `;
             const [docUser] = await sql`
-                SELECT u.name as doctor_name FROM doctors d JOIN users u ON d.uid = u.uid WHERE d.did = ${auth.data.did}
+                SELECT u.name as doctor_name, u.profile_image_url as doctor_image
+                FROM doctors d
+                JOIN users u ON d.uid = u.uid
+                WHERE d.did = ${auth.data.did}
             `;
-            const docName = docUser?.doctor_name ? ('Dr. ' + docUser.doctor_name) : 'Your doctor';
+            const rawDocName = docUser?.doctor_name || 'your doctor';
+            const docName = 'Dr. ' + rawDocName.replace(/^Dr\.?\s+/i, '');
             const ptName = pt?.patient_name || 'Patient';
+            const doctorImage = docUser?.doctor_image || null;
+            const patientImage = pt?.patient_image || null;
+            const patientMeta = {
+                image_url: doctorImage,
+                avatar_url: doctorImage,
+                doctor_name: docName,
+                did: auth.data.did,
+                appointment_id: aid,
+            };
+            const doctorMeta = {
+                image_url: patientImage,
+                avatar_url: patientImage,
+                patient_name: ptName,
+                pid: pt?.patient_pid || data.pid,
+                appointment_id: aid,
+            };
 
             let patientTitle = '';
             let patientBody = '';
@@ -273,15 +353,15 @@ export async function PATCH(request: NextRequest) {
 
             if (patientTitle && pt?.patient_uid) {
                 await sql`
-                    INSERT INTO notifications (uid, title, body, type, is_read)
-                    VALUES (${pt.patient_uid}, ${patientTitle}, ${patientBody}, 'appointment_status', false)
+                    INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                    VALUES (${pt.patient_uid}, ${patientTitle}, ${patientBody}, 'appointment', false, ${JSON.stringify(patientMeta)}::jsonb)
                 `;
             }
 
             if (doctorTitle) {
                 await sql`
-                    INSERT INTO notifications (uid, title, body, type, is_read)
-                    VALUES (${auth.data.uid}, ${doctorTitle}, ${doctorBody}, 'appointment_status', false)
+                    INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                    VALUES (${auth.data.uid}, ${doctorTitle}, ${doctorBody}, 'appointment', false, ${JSON.stringify(doctorMeta)}::jsonb)
                 `;
             }
         } catch (notifErr) {

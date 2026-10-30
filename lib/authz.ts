@@ -248,6 +248,9 @@ export interface AppointmentAccess {
     duration_minutes?: number | null;
     scheduled_date?: string | Date | null;
     scheduled_time?: string | null;
+    call_opens_at?: Date | string | null;
+    call_available?: boolean | null;
+    server_time?: Date | string | null;
 }
 
 /** Loads an appointment by id without any ownership check. */
@@ -255,7 +258,14 @@ export async function loadAppointment(aid: string): Promise<AppointmentAccess | 
     if (!aid) return null;
 
     const [appointment] = await sql`
-        SELECT aid, pid, did, status, mode, call_started_at, call_ended_at, scheduled_date, scheduled_time
+        SELECT aid, pid, did, status, mode, call_started_at, call_ended_at, scheduled_date, scheduled_time,
+               (((scheduled_date + scheduled_time) AT TIME ZONE 'Asia/Kolkata') - interval '10 minutes') AS call_opens_at,
+               (
+                   mode = 'online'
+                   AND status IN ('confirmed', 'in_progress')
+                   AND NOW() >= (((scheduled_date + scheduled_time) AT TIME ZONE 'Asia/Kolkata') - interval '10 minutes')
+               ) AS call_available,
+               NOW() AS server_time
         FROM appointments
         WHERE aid = ${aid}
         LIMIT 1
