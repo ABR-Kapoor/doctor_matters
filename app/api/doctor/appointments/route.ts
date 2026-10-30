@@ -58,21 +58,24 @@ export async function GET(request: NextRequest) {
         const patientIds = [...new Set(allAppointments.map(apt => apt.pid))];
         const appointmentIds = allAppointments.map(apt => apt.aid);
 
-        const patients = await sql`
-            SELECT p.pid, p.uid, u.name, u.email, u.phone, u.profile_image_url
-            FROM patients p JOIN users u ON p.uid = u.uid
-            WHERE p.pid = ANY(${patientIds}::uuid[])
-        `;
-
-        // Count unread patient messages for each appointment
-        const unreadCounts = await sql`
-            SELECT aid, COUNT(*)::int as count
-            FROM appointment_messages
-            WHERE aid = ANY(${appointmentIds}::uuid[])
-              AND sender_role = 'patient'
-              AND read_at IS NULL
-            GROUP BY aid
-        `;
+        // These reads are independent; parallelizing avoids an unnecessary
+        // cross-region round trip on every appointment refresh.
+        const [patients, unreadCounts] = await Promise.all([
+            sql`
+                SELECT p.pid, p.uid, u.name, u.email, u.phone, u.profile_image_url
+                FROM patients p JOIN users u ON p.uid = u.uid
+                WHERE p.pid = ANY(${patientIds}::uuid[])
+            `,
+            // Count unread patient messages for each appointment
+            sql`
+                SELECT aid, COUNT(*)::int as count
+                FROM appointment_messages
+                WHERE aid = ANY(${appointmentIds}::uuid[])
+                  AND sender_role = 'patient'
+                  AND read_at IS NULL
+                GROUP BY aid
+            `,
+        ]);
         const unreadMap = new Map((unreadCounts || []).map((r: any) => [r.aid, Number(r.count)]));
 
         const enrichedAppointments = allAppointments.map((apt: any) => ({
