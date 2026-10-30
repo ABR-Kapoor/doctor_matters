@@ -102,6 +102,11 @@ export async function GET(
                 pid: appointment.pid,
                 status: appointment.status,
                 mode: appointment.mode,
+                scheduled_date: appointment.scheduled_date,
+                scheduled_time: appointment.scheduled_time,
+                callAvailable: Boolean(appointment.call_available),
+                callOpensAt: appointment.call_opens_at,
+                serverTime: appointment.server_time,
                 patient_name: patientName,
                 patient_avatar: patientAvatar,
                 doctor_avatar: doctorAvatar,
@@ -215,7 +220,7 @@ export async function POST(
                     SELECT notification_id FROM notifications
                     WHERE uid = ${pt.patient_uid}
                       AND is_read = false
-                      AND type = 'chat_message'
+                      AND type = 'general'
                       AND (metadata->>'aid') = ${aid}
                     ORDER BY created_at DESC
                     LIMIT 1
@@ -227,7 +232,16 @@ export async function POST(
                         SET title = ${notifTitle},
                             body = ${notifBody},
                             created_at = NOW(),
-                            metadata = ${JSON.stringify({ aid, count: unreadCount, sender_role: 'doctor' })}
+                            metadata = ${JSON.stringify({
+                                aid,
+                                count: unreadCount,
+                                sender_role: 'doctor',
+                                image_url: doctorAvatar,
+                                avatar_url: doctorAvatar,
+                                doctor_name: docDisplayName,
+                                did: auth.data.did,
+                                appointment_id: aid,
+                            })}::jsonb
                         WHERE notification_id = ${existingNotif.notification_id}
                     `;
                 } else {
@@ -245,10 +259,19 @@ export async function POST(
                             ${pt.patient_uid},
                             ${notifTitle},
                             ${notifBody},
-                            'chat_message',
+                            'general',
                             false,
                             ${`/chat/${aid}`},
-                            ${JSON.stringify({ aid, count: unreadCount, sender_role: 'doctor' })},
+                            ${JSON.stringify({
+                                aid,
+                                count: unreadCount,
+                                sender_role: 'doctor',
+                                image_url: doctorAvatar,
+                                avatar_url: doctorAvatar,
+                                doctor_name: docDisplayName,
+                                did: auth.data.did,
+                                appointment_id: aid,
+                            })}::jsonb,
                             NOW()
                         )
                     `;
