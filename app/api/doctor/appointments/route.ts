@@ -5,6 +5,43 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { requireDoctor, requireOwnAppointment } from '@/lib/authz';
 import { closeOpenCallForAppointment, hasOpenCallForAppointment } from '@/lib/callSessions';
 
+/**
+ * Delegates patient/doctor in-app notification creation and Expo push to the
+ * patient backend. Both backends share the database, but only the patient
+ * backend has EXPO_ACCESS_TOKEN, so doctor actions must go through this service
+ * hop to reach a patient's device.
+ */
+async function notifyPatientBackend(payload: Record<string, unknown>): Promise<boolean> {
+    const patientApi = process.env.PATIENT_API_URL;
+    const serviceSecret = process.env.INTERNAL_SERVICE_SECRET;
+
+    if (!patientApi || !serviceSecret) {
+        console.warn('[appointments] PATIENT_API_URL or INTERNAL_SERVICE_SECRET unset; push notification skipped');
+        return false;
+    }
+
+    try {
+        const response = await fetch(`${patientApi.replace(/\/$/, '')}/api/notifications/send`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-service-secret': serviceSecret,
+            },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(8000),
+        });
+
+        if (!response.ok) {
+            console.error(`[appointments] notification service failed: ${response.status} ${await response.text().catch(() => '')}`);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('[appointments] notification service error:', error);
+        return false;
+    }
+}
+
 const updateSchema = z.object({
     aid: z.string().uuid(),
     // Whitelist the status transition target. Previously any arbitrary string was
@@ -160,68 +197,98 @@ export async function PATCH(request: NextRequest) {
             const [data] = await sql`
                 UPDATE appointments SET mode = ${mode} WHERE aid = ${aid} AND did = ${auth.data.did} RETURNING *
             `;
-            try {
-                const [pt] = await sql`
-                    SELECT p.uid as patient_uid, p.pid as patient_pid, u.name as patient_name, u.profile_image_url as patient_image
-                    FROM appointments ap 
-                    JOIN patients p ON ap.pid = p.pid 
-                    JOIN users u ON p.uid = u.uid 
-                    WHERE ap.aid = ${aid}
-                `;
-                const [docUser] = await sql`
-                    SELECT u.name as doctor_name, u.profile_image_url as doctor_image
-                    FROM doctors d
-                    JOIN users u ON d.uid = u.uid
-                    WHERE d.did = ${auth.data.did}
-                `;
-                const rawDocName = docUser?.doctor_name || 'your doctor';
-                const docName = rawDocName.replace(/^Dr\.?\s+/i, '');
-                const displayDocName = `Dr. ${docName}`;
-                const doctorImage = docUser?.doctor_image || null;
-                const patientImage = pt?.patient_image || null;
-                const patientName = pt?.patient_name || 'patient';
-                const modeLabel = mode === 'online' ? 'Online Video Consultation' : 'In-Clinic Visit';
-                const ptMsg = 'Your appointment mode has been changed to ' + modeLabel + '.';
-                const docMsg = 'Appointment mode with ' + patientName + ' was changed to ' + modeLabel + '.';
 
-                if (pt?.patient_uid) {
+            const notified = await notifyPatientBackend({
+                type: 'appointment_status',
+                data: {
+                    appointmentId: aid,
+                    doctorId: auth.data.did,
+                    mode,
+                    updatedAt: data?.updated_at,
+                },
+            });
+
+            if (!notified) {
+                const modeChangedAt = data?.updated_at && !Number.isNaN(new Date(data.updated_at).getTime())
+                    ? new Date(data.updated_at).getTime()
+                    : Date.now();
+                const patientEventKey = `appointment:${aid}:mode:${mode}:${modeChangedAt}`;
+                const doctorEventKey = `doctor:appointment:${aid}:mode:${mode}:${modeChangedAt}`;
+
+                try {
+                    const [pt] = await sql`
+                        SELECT p.uid as patient_uid, p.pid as patient_pid, u.name as patient_name, u.profile_image_url as patient_image
+                        FROM appointments ap 
+                        JOIN patients p ON ap.pid = p.pid 
+                        JOIN users u ON p.uid = u.uid 
+                        WHERE ap.aid = ${aid}
+                    `;
+                    const [docUser] = await sql`
+                        SELECT u.name as doctor_name, u.profile_image_url as doctor_image
+                        FROM doctors d
+                        JOIN users u ON d.uid = u.uid
+                        WHERE d.did = ${auth.data.did}
+                    `;
+                    const rawDocName = docUser?.doctor_name || 'your doctor';
+                    const docName = rawDocName.replace(/^Dr\.?\s+/i, '');
+                    const displayDocName = `Dr. ${docName}`;
+                    const doctorImage = docUser?.doctor_image || null;
+                    const patientImage = pt?.patient_image || null;
+                    const patientName = pt?.patient_name || 'patient';
+                    const modeLabel = mode === 'online' ? 'Online Video Consultation' : 'In-Clinic Visit';
+                    const ptMsg = 'Your appointment mode has been changed to ' + modeLabel + '.';
+                    const docMsg = 'Appointment mode with ' + patientName + ' was changed to ' + modeLabel + '.';
+
+                    const patientMeta = {
+                        image_url: doctorImage,
+                        avatar_url: doctorImage,
+                        doctor_name: displayDocName,
+                        did: auth.data.did,
+                        appointment_id: aid,
+                        event_key: patientEventKey,
+                    };
+                    const doctorMeta = {
+                        image_url: patientImage,
+                        avatar_url: patientImage,
+                        patient_name: patientName,
+                        pid: pt?.patient_pid || data.pid,
+                        appointment_id: aid,
+                        event_key: doctorEventKey,
+                    };
+
+                    if (pt?.patient_uid) {
+                        await sql`
+                            INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                            VALUES (
+                                ${pt.patient_uid},
+                                'Visit Mode Updated',
+                                ${ptMsg},
+                                'appointment',
+                                false,
+                                ${sql.json(patientMeta)}
+                            )
+                            ON CONFLICT (uid, ((metadata ->> 'event_key')))
+                                WHERE metadata ? 'event_key'
+                            DO NOTHING
+                        `;
+                    }
                     await sql`
                         INSERT INTO notifications (uid, title, body, type, is_read, metadata)
                         VALUES (
-                            ${pt.patient_uid},
+                            ${auth.data.uid},
                             'Visit Mode Updated',
-                            ${ptMsg},
+                            ${docMsg},
                             'appointment',
                             false,
-                            ${JSON.stringify({
-                                image_url: doctorImage,
-                                avatar_url: doctorImage,
-                                doctor_name: displayDocName,
-                                did: auth.data.did,
-                                appointment_id: aid,
-                            })}::jsonb
+                            ${sql.json(doctorMeta)}
                         )
+                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
+                            WHERE metadata ? 'event_key'
+                        DO NOTHING
                     `;
+                } catch (notifErr) {
+                    console.error('Mode change notification error:', notifErr);
                 }
-                await sql`
-                    INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                    VALUES (
-                        ${auth.data.uid},
-                        'Visit Mode Updated',
-                        ${docMsg},
-                        'appointment',
-                        false,
-                        ${JSON.stringify({
-                            image_url: patientImage,
-                            avatar_url: patientImage,
-                            patient_name: patientName,
-                            pid: pt?.patient_pid || data.pid,
-                            appointment_id: aid,
-                        })}::jsonb
-                    )
-                `;
-            } catch (notifErr) {
-                console.error('Mode change notification error:', notifErr);
             }
 
             return NextResponse.json({ success: true, appointment: data });
@@ -292,83 +359,108 @@ export async function PATCH(request: NextRequest) {
         }
 
 
-        // In-app notifications for status transitions (confirmed, in_progress, completed, cancelled)
-        try {
-            const [pt] = await sql`
-                SELECT p.uid as patient_uid, p.pid as patient_pid, u.name as patient_name, u.profile_image_url as patient_image
-                FROM appointments ap 
-                JOIN patients p ON ap.pid = p.pid 
-                JOIN users u ON p.uid = u.uid 
-                WHERE ap.aid = ${aid}
-            `;
-            const [docUser] = await sql`
-                SELECT u.name as doctor_name, u.profile_image_url as doctor_image
-                FROM doctors d
-                JOIN users u ON d.uid = u.uid
-                WHERE d.did = ${auth.data.did}
-            `;
-            const rawDocName = docUser?.doctor_name || 'your doctor';
-            const docName = 'Dr. ' + rawDocName.replace(/^Dr\.?\s+/i, '');
-            const ptName = pt?.patient_name || 'Patient';
-            const doctorImage = docUser?.doctor_image || null;
-            const patientImage = pt?.patient_image || null;
-            const patientMeta = {
-                image_url: doctorImage,
-                avatar_url: doctorImage,
-                doctor_name: docName,
-                did: auth.data.did,
-                appointment_id: aid,
-            };
-            const doctorMeta = {
-                image_url: patientImage,
-                avatar_url: patientImage,
-                patient_name: ptName,
-                pid: pt?.patient_pid || data.pid,
-                appointment_id: aid,
-            };
+        // Notify both parties through the patient backend so the matching Expo
+        // push is dispatched too. If that service hop fails, fall back to the
+        // local insert so the in-app feed still reflects the status change.
+        const notified = await notifyPatientBackend({
+            type: 'appointment_status',
+            data: {
+                appointmentId: aid,
+                doctorId: auth.data.did,
+                status,
+                updatedAt: data?.updated_at,
+            },
+        });
 
-            let patientTitle = '';
-            let patientBody = '';
-            let doctorTitle = '';
-            let doctorBody = '';
+        if (!notified) {
+            const patientEventKey = `appointment:${aid}:${status}`;
+            const doctorEventKey = `doctor:appointment:${aid}:${status}`;
 
-            if (status === 'confirmed') {
-                patientTitle = 'Appointment Confirmed';
-                patientBody = docName + ' has confirmed your consultation for ' + data.scheduled_date + ' at ' + data.scheduled_time + '.';
-                doctorTitle = 'Appointment Confirmed';
-                doctorBody = 'You confirmed the appointment with ' + ptName + '.';
-            } else if (status === 'in_progress') {
-                patientTitle = 'Consultation Started';
-                patientBody = docName + ' has started your consultation session.';
-                doctorTitle = 'Consultation In Progress';
-                doctorBody = 'Consultation with ' + ptName + ' is currently in progress.';
-            } else if (status === 'completed') {
-                patientTitle = 'Consultation Completed';
-                patientBody = 'Your consultation with ' + docName + ' has been marked as completed.';
-                doctorTitle = 'Consultation Completed';
-                doctorBody = 'You marked the consultation with ' + ptName + ' as completed.';
-            } else if (status === 'cancelled') {
-                patientTitle = 'Appointment Cancelled';
-                patientBody = docName + ' cancelled the appointment on ' + data.scheduled_date + '. Full refund will be processed.';
-                doctorTitle = 'Appointment Cancelled';
-                doctorBody = 'You cancelled the appointment with ' + ptName + '.';
-            }
-
-            if (patientTitle && pt?.patient_uid) {
-                await sql`
-                    INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                    VALUES (${pt.patient_uid}, ${patientTitle}, ${patientBody}, 'appointment', false, ${JSON.stringify(patientMeta)}::jsonb)
+            try {
+                const [pt] = await sql`
+                    SELECT p.uid as patient_uid, p.pid as patient_pid, u.name as patient_name, u.profile_image_url as patient_image
+                    FROM appointments ap 
+                    JOIN patients p ON ap.pid = p.pid 
+                    JOIN users u ON p.uid = u.uid 
+                    WHERE ap.aid = ${aid}
                 `;
-            }
-
-            if (doctorTitle) {
-                await sql`
-                    INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                    VALUES (${auth.data.uid}, ${doctorTitle}, ${doctorBody}, 'appointment', false, ${JSON.stringify(doctorMeta)}::jsonb)
+                const [docUser] = await sql`
+                    SELECT u.name as doctor_name, u.profile_image_url as doctor_image
+                    FROM doctors d
+                    JOIN users u ON d.uid = u.uid
+                    WHERE d.did = ${auth.data.did}
                 `;
+                const rawDocName = docUser?.doctor_name || 'your doctor';
+                const docName = 'Dr. ' + rawDocName.replace(/^Dr\.?\s+/i, '');
+                const ptName = pt?.patient_name || 'Patient';
+                const doctorImage = docUser?.doctor_image || null;
+                const patientImage = pt?.patient_image || null;
+                const patientMeta = {
+                    image_url: doctorImage,
+                    avatar_url: doctorImage,
+                    doctor_name: docName,
+                    did: auth.data.did,
+                    appointment_id: aid,
+                    event_key: patientEventKey,
+                };
+                const doctorMeta = {
+                    image_url: patientImage,
+                    avatar_url: patientImage,
+                    patient_name: ptName,
+                    pid: pt?.patient_pid || data.pid,
+                    appointment_id: aid,
+                    event_key: doctorEventKey,
+                };
+
+                let patientTitle = '';
+                let patientBody = '';
+                let doctorTitle = '';
+                let doctorBody = '';
+
+                if (status === 'confirmed') {
+                    patientTitle = 'Appointment Confirmed';
+                    patientBody = docName + ' has confirmed your consultation for ' + data.scheduled_date + ' at ' + data.scheduled_time + '.';
+                    doctorTitle = 'Appointment Confirmed';
+                    doctorBody = 'You confirmed the appointment with ' + ptName + '.';
+                } else if (status === 'in_progress') {
+                    patientTitle = 'Consultation Started';
+                    patientBody = docName + ' has started your consultation session.';
+                    doctorTitle = 'Consultation In Progress';
+                    doctorBody = 'Consultation with ' + ptName + ' is currently in progress.';
+                } else if (status === 'completed') {
+                    patientTitle = 'Consultation Completed';
+                    patientBody = 'Your consultation with ' + docName + ' has been marked as completed.';
+                    doctorTitle = 'Consultation Completed';
+                    doctorBody = 'You marked the consultation with ' + ptName + ' as completed.';
+                } else if (status === 'cancelled') {
+                    patientTitle = 'Appointment Cancelled';
+                    patientBody = docName + ' cancelled the appointment on ' + data.scheduled_date + '. Full refund will be processed.';
+                    doctorTitle = 'Appointment Cancelled';
+                    doctorBody = 'You cancelled the appointment with ' + ptName + '.';
+                }
+
+                if (patientTitle && pt?.patient_uid) {
+                    await sql`
+                        INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                        VALUES (${pt.patient_uid}, ${patientTitle}, ${patientBody}, 'appointment', false, ${sql.json(patientMeta)})
+                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
+                            WHERE metadata ? 'event_key'
+                        DO NOTHING
+                    `;
+                }
+
+                if (doctorTitle) {
+                    await sql`
+                        INSERT INTO notifications (uid, title, body, type, is_read, metadata)
+                        VALUES (${auth.data.uid}, ${doctorTitle}, ${doctorBody}, 'appointment', false, ${sql.json(doctorMeta)})
+                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
+                            WHERE metadata ? 'event_key'
+                        DO NOTHING
+                    `;
+                }
+            } catch (notifErr) {
+                console.error('Failed to record doctor appointment status notification:', notifErr);
             }
-        } catch (notifErr) {
-            console.error('Failed to record doctor appointment status notification:', notifErr);
         }
 
 
