@@ -38,6 +38,13 @@ export async function GET() {
                 `;
 
                 if (!existing) {
+                    const metadata = {
+                        image_url: item.patient_image || null,
+                        avatar_url: item.patient_image || null,
+                        patient_name: item.patient_name || 'Patient',
+                        pid: item.pid,
+                        event_key: `doctor:reminder:${item.pid}:${todayStr}:${item.medicine_name}`,
+                    };
                     await sql`
                         INSERT INTO notifications (uid, title, body, type, is_read, metadata)
                         VALUES (
@@ -46,13 +53,11 @@ export async function GET() {
                             ${notifBody},
                             'reminder',
                             false,
-                            ${JSON.stringify({
-                                image_url: item.patient_image || null,
-                                avatar_url: item.patient_image || null,
-                                patient_name: item.patient_name || 'Patient',
-                                pid: item.pid,
-                            })}::jsonb
+                            ${sql.json(metadata)}
                         )
+                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
+                            WHERE metadata ? 'event_key'
+                        DO NOTHING
                     `;
                 }
             }
