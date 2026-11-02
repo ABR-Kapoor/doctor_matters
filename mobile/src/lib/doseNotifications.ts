@@ -232,7 +232,10 @@ export function subscribeToDoseNotificationTaps(
     if (typeof url === 'string' && url.length > 0) navigate(url);
   };
 
-  void n.getLastNotificationResponseAsync().then(redirect);
+  void n.getLastNotificationResponseAsync().then((response) => {
+    redirect(response);
+    if (response) void n.clearLastNotificationResponseAsync?.().catch(() => {});
+  });
 
   const subscription = n.addNotificationResponseReceivedListener(redirect);
   return () => subscription.remove();

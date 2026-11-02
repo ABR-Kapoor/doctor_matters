@@ -1,4 +1,6 @@
-import { configureDoseNotifications } from '@/lib/doseNotifications';
+import { configureDoseNotifications, subscribeToDoseNotificationTaps } from '@/lib/doseNotifications';
+import { registerPushNotifications, subscribeToPushTokenChanges } from '@/lib/pushNotifications';
+import { toMobileNotificationHref } from '@/lib/notificationRoute';
 import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import { ClerkProvider, ClerkLoaded, useAuth } from '@clerk/expo';
@@ -55,9 +57,22 @@ function RootLayoutNav() {
     configureDoseNotifications().catch(() => {});
   }, []);
 
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    void registerPushNotifications(getToken);
+    return subscribeToPushTokenChanges(getToken);
+  }, [getToken, isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    return subscribeToDoseNotificationTaps((url) => {
+      const href = toMobileNotificationHref(url);
+      if (href) router.push(href as any);
+    });
+  }, [router]);
 
   useEffect(() => {
     if (!isLoaded) return;

@@ -238,7 +238,7 @@ export async function PATCH(request: NextRequest) {
         try {
             await sql`
                 INSERT INTO notifications (uid, title, body, type, is_read)
-                VALUES (${uid}, 'Profile Updated', 'Your professional profile and clinic details have been updated.', 'profile', false)
+                VALUES (${uid}, 'Profile Updated', 'Your professional profile and clinic details have been updated.', 'general', false)
             `;
         } catch (e) {
             console.error('Profile update notification error:', e);
