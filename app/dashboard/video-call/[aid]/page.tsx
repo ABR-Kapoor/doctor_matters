@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { Video, FileSignature } from 'lucide-react';
+import { FileSignature, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TranslatedText } from '@/app/components/TranslatedText';
 import { formatDate } from '@/lib/shared/utils';
@@ -12,106 +12,193 @@ import { useLanguage } from '@/app/contexts/LanguageContext';
 import { useAuthToken } from '@/lib/auth-token-context';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import DoctorConsentModal from '@/app/components/DoctorConsentModal';
+import { useCall } from '@/app/components/CallProvider';
 
 export default function DoctorVideoCallPage() {
   const token = useAuthToken();
   const { translate } = useLanguage();
+  const { session, recentTerminal, refresh, endCall } = useCall();
   const params = useParams();
   const router = useRouter();
   const aid = params?.aid as string;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
-  const [appointmentData, setAppointmentData] = useState<any>(null);
   const zpRef = useRef<any>(null);
-  const [callStartTime, setCallStartTime] = useState<Date | null>(null);
-  const [callDurationSeconds, setCallDurationSeconds] = useState<number>(0);
-  const [showPostCallModal, setShowPostCallModal] = useState(false);
-  const [liveTimerInterval, setLiveTimerInterval] = useState<NodeJS.Timeout | null>(null);
-  const liveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const hasJoinedRoom = useRef(false);
-  const hasInitialized = useRef(false);
-  const hasLeftRoom = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startRef = useRef<Date | null>(null);
+  const hasLeftRef = useRef(false);
+  const joinedRef = useRef(false);
+  const sawActiveRef = useRef(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [appointmentData, setAppointmentData] = useState<any>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [consentLoading, setConsentLoading] = useState(false);
-  const callStartTimeRef = useRef<Date | null>(null); // Ref for stale-closure-safe access
-  const endPollRef = useRef<NodeJS.Timeout | null>(null);
+  const [callDurationSeconds, setCallDurationSeconds] = useState(0);
+  const [showPostCallModal, setShowPostCallModal] = useState(false);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const destroyZego = () => {
+    const zp = zpRef.current;
+    zpRef.current = null;
+    if (zp) {
+      try { zp.destroy(); } catch {}
+    }
+  };
+
+  const finishCall = (acceptedAt: string | null, endedAt: string | null) => {
+    if (hasLeftRef.current && showPostCallModal) return;
+    hasLeftRef.current = true;
+    clearTimer();
+    const start = acceptedAt ? new Date(acceptedAt) : startRef.current;
+    const end = endedAt ? new Date(endedAt) : new Date();
+    const seconds = start ? Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000)) : 0;
+    setCallDurationSeconds(seconds);
+    setShowPostCallModal(true);
+    window.setTimeout(destroyZego, 800);
+  };
 
   useEffect(() => {
-    console.log('[DOCTOR] Component mounted, starting initialization...');
+    if (!consentAccepted) return;
+    const timer = window.setTimeout(() => { void initializeCall(); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [consentAccepted, aid]);
 
-    // Only run on client side
-    if (typeof window === 'undefined') {
-      console.log('[DOCTOR] Not in browser, skipping');
+  useEffect(() => {
+    if (!joinedRef.current || showPostCallModal || hasLeftRef.current) return;
+    const activeForThisCall = session?.aid === aid && session.status === 'active';
+    if (activeForThisCall) {
+      sawActiveRef.current = true;
       return;
     }
+    if (!sawActiveRef.current) return;
+    const terminal = recentTerminal?.aid === aid ? recentTerminal : null;
+    if (terminal || session === null) {
+      finishCall(terminal?.acceptedAt ?? startRef.current?.toISOString() ?? null, terminal?.endedAt ?? null);
+    }
+  }, [aid, recentTerminal, session, showPostCallModal]);
 
-    // Suppress ZegoCloud internal async errors that fire after destroy()
-    const suppressErrors = (e: ErrorEvent) => {
-      if (e.message?.includes('createSpan') || e.message?.includes('Cannot read properties of null')) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
+  useEffect(() => () => {
+    clearTimer();
+    const zp = zpRef.current;
+    zpRef.current = null;
+    if (zp) {
+      try { zp.destroy(); } catch {}
+    }
+  }, []);
+
+  async function fetchActiveSession() {
+    try {
+      const response = await fetchWithAuth('/api/calls/active', token);
+      const data = await response.json();
+      if (data.success && data.session?.aid === aid && data.session.status === 'active') {
+        return data.session;
       }
-    };
-    const suppressRejections = (e: PromiseRejectionEvent) => {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    };
-    window.addEventListener('error', suppressErrors as any, true);
-    window.addEventListener('unhandledrejection', suppressRejections, true);
+    } catch {}
+    return null;
+  }
 
-    return () => {
-      window.removeEventListener('error', suppressErrors as any, true);
-      window.removeEventListener('unhandledrejection', suppressRejections, true);
-      console.log('[DOCTOR] Cleanup called');
+  async function initializeCall() {
+    const timeoutId = window.setTimeout(async () => {
+      const message = await translate('Connection timeout - please check your camera/microphone permissions and internet connection');
+      setError(message);
+      setLoading(false);
+    }, 15000);
 
-      // Reset flags
-      hasJoinedRoom.current = false;
-      hasInitialized.current = false;
-      hasLeftRoom.current = false;
+    try {
+      if (!containerRef.current) throw new Error('Video container not ready');
 
-      // Cleanup timer
-      if (liveTimerRef.current) {
-        clearInterval(liveTimerRef.current);
-        liveTimerRef.current = null;
-        setLiveTimerInterval(null);
-      }
-      if (endPollRef.current) {
-        clearInterval(endPollRef.current);
-        endPollRef.current = null;
-      }
-
-      // Cleanup ZegoCloud instance
-      if (zpRef.current) {
-        try {
-          console.log('[DOCTOR] Destroying ZegoCloud instance');
-          zpRef.current.destroy();
-          zpRef.current = null;
-        } catch (e) {
-          console.log('[DOCTOR] ZegoCloud cleanup error:', e);
+      let activeSession = session?.aid === aid && session.status === 'active' ? session : null;
+      if (!activeSession) {
+        activeSession = await fetchActiveSession();
+        if (!activeSession) {
+          await refresh();
+          activeSession = await fetchActiveSession();
         }
       }
-    };
-  }, [aid]);
+      if (!activeSession) throw new Error('This call is no longer active.');
 
-  useEffect(() => {
-    if (consentAccepted && !hasInitialized.current) {
-      const timer = setTimeout(() => {
-        console.log('[DOCTOR] Consent accepted, firing init function');
-        fetchAppointmentAndInitCall();
-      }, 500);
-      return () => clearTimeout(timer);
+      if (!appointmentData) {
+        const response = await fetchWithAuth('/api/doctor/appointments', token);
+        const data = await response.json();
+        if (!data.success) throw new Error('Failed to load appointments');
+        const allAppointments = [
+          ...(data.appointments?.pending || []),
+          ...(data.appointments?.confirmed || []),
+          ...(data.appointments?.today || []),
+          ...(data.appointments?.completed || []),
+        ];
+        const appointment = allAppointments.find((apt: any) => apt.aid === aid);
+        if (!appointment) throw new Error('Appointment not found');
+        setAppointmentData(appointment);
+      }
+
+      const tokenResponse = await fetchWithAuth('/api/calls/zego-token', token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: `appointment_${aid}` }),
+      });
+      const tokenData = await tokenResponse.json();
+      if (!tokenResponse.ok || !tokenData.success || !tokenData.token) {
+        throw new Error(tokenData.error || 'Failed to fetch secure ZegoCloud token from server');
+      }
+
+      const { ZegoUIKitPrebuilt } = await import('@zegocloud/zego-uikit-prebuilt');
+      const zp = ZegoUIKitPrebuilt.create(tokenData.token);
+      zpRef.current = zp;
+
+      zp.joinRoom({
+        container: containerRef.current,
+        scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
+        showPreJoinView: false,
+        showScreenSharingButton: true,
+        showRoomTimer: true,
+        maxUsers: 2,
+        onLeaveRoom: () => {
+          if (zpRef.current === null) return;
+          void leaveAndEnd();
+        },
+        onJoinRoom: () => {
+          joinedRef.current = true;
+          hasLeftRef.current = false;
+          const start = activeSession.acceptedAt ? new Date(activeSession.acceptedAt) : new Date();
+          startRef.current = start;
+          clearTimer();
+          timerRef.current = setInterval(() => {
+            setCallDurationSeconds(Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000)));
+          }, 1000);
+          setLoading(false);
+        },
+        onUserJoin: () => {},
+        onUserLeave: () => {
+          if (!hasLeftRef.current) toast('The patient left the call. You can wait for them to rejoin.');
+        },
+      });
+
+      window.clearTimeout(timeoutId);
+    } catch (err: any) {
+      window.clearTimeout(timeoutId);
+      console.error('[DOCTOR] Video call initialization error:', err);
+      const message = await translate(err?.message || 'Failed to initialize video call');
+      setError(message);
+      setLoading(false);
     }
-  }, [consentAccepted]);
+  }
 
   async function handleConsentAccept() {
     setConsentLoading(true);
     try {
       await fetchWithAuth(`/api/appointments/${aid}/consent`, token, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ consent_ip: '' }),
       });
-    } catch { /* consent recording is non-critical */ }
+    } catch {}
     setConsentAccepted(true);
     setConsentLoading(false);
   }
@@ -121,356 +208,30 @@ export default function DoctorVideoCallPage() {
     router.push('/dashboard/appointments?tab=today');
   }
 
-  async function fetchAppointmentAndInitCall() {
-    // Prevent multiple initializations
-    if (hasInitialized.current) {
-      console.log('[DOCTOR] Already initialized, skipping');
-      return;
-    }
-
-    hasInitialized.current = true;
-    console.log('[DOCTOR] Starting initialization...');
-
-    const timeoutId = setTimeout(async () => {
-      const errorMsg = await translate('Connection timeout - please check your camera/microphone permissions and internet connection');
-      setError(errorMsg);
-      toast.error(errorMsg);
-      setLoading(false);
-    }, 15000); // 15 second timeout
-
+  async function leaveAndEnd() {
+    if (hasLeftRef.current) return;
+    hasLeftRef.current = true;
+    clearTimer();
     try {
-      console.log('Starting video call initialization...');
-
-      // Check if container is available
-      if (!containerRef.current) {
-        throw new Error('Video container not ready');
-      }
-
-      // Sync user
-      const syncResponse = await fetchWithAuth('/api/sync-user', token);
-      const { user } = await syncResponse.json();
-
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
-      // Fetch appointment details
-      const response = await fetchWithAuth(`/api/doctor/appointments`, token);
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error('Failed to load appointments');
-      }
-
-      // Find the specific appointment
-      const allAppointments = [
-        ...data.appointments.pending,
-        ...data.appointments.confirmed,
-        ...data.appointments.today,
-      ];
-      const appointment = allAppointments.find((apt: any) => apt.aid === aid);
-
-      if (!appointment) {
-        throw new Error('Appointment not found');
-      }
-
-      console.log('Appointment found:', appointment.aid);
-      setAppointmentData(appointment);
-
-      // Dynamically import ZegoCloud SDK (client-side only)
-      console.log('Loading ZegoCloud SDK...');
-      const { ZegoUIKitPrebuilt } = await import('@zegocloud/zego-uikit-prebuilt');
-
-      const roomID = `appointment_${aid}`;
-
-      // The kit token is minted SERVER-SIDE by /api/calls/zego-token, which
-      // verifies the Clerk session, checks this doctor owns the appointment, and
-      // never exposes ZEGO_SERVER_SECRET. This page used to read the secret from
-      // NEXT_PUBLIC_ZEGO_SERVER_SECRET (publishing it to every browser) and then
-      // re-wrap the server token with the client-side
-      // `generateKitTokenForProduction` helper.
-      console.log('Requesting kit token for room:', roomID);
-
-      const tokenResponse = await fetchWithAuth('/api/calls/zego-token', token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: roomID })
-      });
-      const tokenData = await tokenResponse.json();
-
-      if (!tokenResponse.ok || !tokenData.success || !tokenData.token) {
-        throw new Error(tokenData.error || 'Failed to fetch secure ZegoCloud token from server');
-      }
-
-      console.log('Kit token received');
-      console.log('Creating ZegoCloud instance...');
-
-      const zp = ZegoUIKitPrebuilt.create(tokenData.token);
-
-      if (!zp) {
-        throw new Error('Failed to create ZegoCloud instance');
-      }
-
-      zpRef.current = zp;
-
-      // Double-check container is still available
-      if (!containerRef.current) {
-        throw new Error('Video container disappeared during initialization');
-      }
-
-      console.log('[DOCTOR] Joining room...');
-
-      // Don't await - just start the join process
-      zp.joinRoom({
-        container: containerRef.current,
-        scenario: {
-          mode: ZegoUIKitPrebuilt.OneONoneCall,
-        },
-        showPreJoinView: false,
-        showScreenSharingButton: true,
-        showRoomTimer: true,
-        maxUsers: 2,
-        onLeaveRoom: () => {
-          console.log('[DOCTOR] onLeaveRoom triggered!');
-
-          // Ignore duplicate leave notifications from SDK
-          if (hasLeftRoom.current) {
-            console.log('[DOCTOR] Ignoring duplicate onLeaveRoom');
-            return;
-          }
-          hasLeftRoom.current = true;
-
-          // Only process if user has actually joined the room
-          if (!hasJoinedRoom.current) {
-            console.log('[DOCTOR] Ignoring onLeaveRoom - user never joined');
-            return;
-          }
-
-          clearTimeout(timeoutId);
-
-          // Stop live timer
-          if (liveTimerRef.current) {
-            clearInterval(liveTimerRef.current);
-            liveTimerRef.current = null;
-            setLiveTimerInterval(null);
-          }
-          if (endPollRef.current) {
-            clearInterval(endPollRef.current);
-            endPollRef.current = null;
-          }
-
-          // Calculate final duration
-          const st = callStartTimeRef.current || new Date();
-          const endTime = new Date();
-          const durationMs = endTime.getTime() - st.getTime();
-          const durationSeconds = Math.max(0, Math.floor(durationMs / 1000));
-          const durationMinutes = durationSeconds / 60;
-
-          setCallDurationSeconds(durationSeconds);
-          updateCallDuration(st, endTime, durationMinutes);
-
-          setShowPostCallModal(true);
-          
-          setTimeout(() => {
-            const zp = zpRef.current;
-            zpRef.current = null;
-            if (zp) { try { zp.destroy(); } catch (_) {} }
-          }, 1000);
-        },
-        onJoinRoom: async () => {
-          console.log('[DOCTOR] Successfully joined room!');
-
-          // Prevent duplicate onJoinRoom calls
-          if (hasJoinedRoom.current) {
-            console.log('[DOCTOR] Already joined, ignoring duplicate onJoinRoom');
-            return;
-          }
-
-          hasJoinedRoom.current = true; // Mark that user has joined
-          hasLeftRoom.current = false;
-          clearTimeout(timeoutId);
-
-          // Start call on server and get synchronized start time
-          const startTime = await startCall();
-          setCallStartTime(startTime);
-          callStartTimeRef.current = startTime;
-
-          // Start live timer (updates every second)
-          const timer = setInterval(() => {
-            const now = new Date();
-            const elapsed = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-            setCallDurationSeconds(elapsed >= 0 ? elapsed : 0);
-          }, 1000);
-          liveTimerRef.current = timer;
-          setLiveTimerInterval(timer);
-
-          // Start polling for end status
-          startEndPoll();
-        },
-        onUserJoin: (users: any) => {
-          console.log('[DOCTOR] User joined:', users);
-        },
-        onUserLeave: (users: any) => {
-          console.log('[DOCTOR] Patient left:', users);
-          if (users.length > 0 && !hasLeftRoom.current) {
-            setTimeout(() => {
-              if (!hasLeftRoom.current) {
-                hasLeftRoom.current = true;
-                if (liveTimerRef.current) {
-                  clearInterval(liveTimerRef.current);
-                  liveTimerRef.current = null;
-                  setLiveTimerInterval(null);
-                }
-                if (endPollRef.current) {
-                  clearInterval(endPollRef.current);
-                  endPollRef.current = null;
-                }
-                const st = callStartTimeRef.current || new Date();
-                const endTime = new Date();
-                const durationMs = endTime.getTime() - st.getTime();
-                const durationSeconds = Math.max(0, Math.floor(durationMs / 1000));
-                const durationMinutes = durationSeconds / 60;
-                setCallDurationSeconds(durationSeconds);
-                updateCallDuration(st, endTime, durationMinutes);
-                setShowPostCallModal(true);
-                
-                setTimeout(() => {
-                  const zp = zpRef.current;
-                  zpRef.current = null;
-                  if (zp) { try { zp.destroy(); } catch (_) {} }
-                }, 1000);
-              }
-            }, 2000);
-          }
-        },
-      });
-
-      // Set loading to false immediately after starting join
-      console.log('Video call initialized, waiting for connection...');
-      clearTimeout(timeoutId);
-      setLoading(false);
-    } catch (error: any) {
-      console.error('[DOCTOR] Video call initialization error:', error);
-      clearTimeout(timeoutId);
-
-      // Reset initialization flag to allow retry
-      hasInitialized.current = false;
-
-      const errorMsg = await translate(error.message || 'Failed to initialize video call');
-      setError(errorMsg);
-      toast.error(errorMsg);
-      setLoading(false);
-
-      // Redirect after showing error
-      setTimeout(() => {
-        router.push('/dashboard/appointments?tab=today');
-      }, 3000);
-    }
-  }
-
-  async function startCall() {
-    try {
-      console.log('[DOCTOR] Notifying server: Call Started');
-      const response = await fetchWithAuth(`/api/appointments/${aid}/start-call`, token, { method: 'POST' });
-      const data = await response.json();
-
-      if (data.success && data.data?.call_started_at) {
-        return new Date(data.data.call_started_at);
-      }
-      return new Date(); // Fallback
-    } catch (error) {
-      console.error('[DOCTOR] Failed to start call on server:', error);
-      return new Date();
-    }
-  }
-
-  function startEndPoll() {
-    if (endPollRef.current) return;
-    const interval = setInterval(async () => {
-      if (hasLeftRoom.current) { clearInterval(interval); endPollRef.current = null; return; }
-      try {
-        const response = await fetchWithAuth(`/api/appointments/${aid}/status`, token);
-        const data = await response.json();
-        if (data.success && data.data?.status === 'completed' && !hasLeftRoom.current) {
-          clearInterval(interval);
-          endPollRef.current = null;
-          hasLeftRoom.current = true;
-          
-          if (liveTimerRef.current) {
-            clearInterval(liveTimerRef.current);
-            liveTimerRef.current = null;
-            setLiveTimerInterval(null);
-          }
-
-          const st = callStartTimeRef.current || new Date();
-          const endTime = new Date(data.data.callEndedAt || new Date());
-          const durationSeconds = Math.max(0, Math.floor((endTime.getTime() - st.getTime()) / 1000));
-          
-          setCallDurationSeconds(durationSeconds);
-          
-          // Cleanup ZegoCloud
-          if (zpRef.current) {
-            try {
-              zpRef.current.destroy();
-              zpRef.current = null;
-            } catch (e) {}
-          }
-          
-          setShowPostCallModal(true);
-        }
-      } catch {}
-    }, 5000);
-    endPollRef.current = interval;
-  }
-
-  async function updateCallDuration(startTime: Date, endTime: Date, durationMins: number) {
-    try {
-      console.log('[DOCTOR] Updating call duration:', {
-        aid,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        duration_minutes: durationMins
-      });
-
-      const response = await fetchWithAuth(`/api/appointments/${aid}/call-duration`, token, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          duration_minutes: durationMins,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        console.log('[DOCTOR] ✅ Call duration updated successfully:', data);
-      } else {
-        console.error('[DOCTOR] ❌ API returned error:', data);
-      }
-    } catch (err) {
-      console.error('[DOCTOR] ❌ Failed to update call duration:', err);
-    }
+      await endCall();
+    } catch {}
+    finishCall(session?.acceptedAt ?? startRef.current?.toISOString() ?? null, new Date().toISOString());
   }
 
   function handlePrescribe() {
-    if (appointmentData) {
-      const minutes = Math.floor(callDurationSeconds / 60);
-      router.push(`/dashboard/prescriptions/new?aid=${aid}&pid=${appointmentData.pid}&duration=${minutes}`);
-    }
+    if (!appointmentData) return;
+    const minutes = Math.floor(callDurationSeconds / 60);
+    router.push(`/dashboard/prescriptions/new?aid=${aid}&pid=${appointmentData.pid}&duration=${minutes}`);
   }
 
   return (
     <div className="fixed inset-0 z-30 bg-gray-900">
-      {/* Video Call Container - Hidden when call ends */}
       <div
         ref={containerRef}
         className="w-full h-full"
-        style={{ display: showPostCallModal ? 'none' : 'block' }}
+        style={{ display: loading || error || showPostCallModal ? 'none' : 'block' }}
       />
 
-      {/* Consent Modal */}
       {!consentAccepted && !error && !showPostCallModal && (
         <DoctorConsentModal
           onAccept={handleConsentAccept}
@@ -480,16 +241,14 @@ export default function DoctorVideoCallPage() {
         />
       )}
 
-      {/* Loading Overlay */}
-      {loading && consentAccepted && (
+      {loading && consentAccepted && !error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 z-50">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
           <p className="text-gray-700 font-medium"><TranslatedText>Connecting to video call...</TranslatedText></p>
           <p className="text-gray-500 text-sm mt-2"><TranslatedText>Please allow camera and microphone access</TranslatedText></p>
         </div>
       )}
 
-      {/* Error Overlay */}
       {error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-rose-50 to-red-100 z-50">
           <div className="bg-white p-5 sm:p-8 rounded-2xl shadow-lg text-center max-w-[min(90vw,28rem)]">
@@ -508,14 +267,12 @@ export default function DoctorVideoCallPage() {
         </div>
       )}
 
-      {/* Emergency disclaimer */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full z-10 max-w-[90vw]">
         <p className="text-[10px] text-white/80 whitespace-nowrap">
           <strong>AuraSutra</strong> is a practitioner directory. For emergencies, advise patients to <strong>call 112</strong>.
         </p>
       </div>
 
-      {/* Patient Info Overlay - Only during call */}
       {appointmentData && !loading && !error && !showPostCallModal && (
         <div className="absolute bottom-2 left-2 sm:bottom-auto sm:top-4 sm:left-4 bg-white/90 backdrop-blur-sm px-2 py-1.5 sm:px-3 sm:py-2 rounded-xl max-w-[min(80vw,280px)] shadow-lg z-10">
           <div className="flex items-center space-x-3">
@@ -535,8 +292,7 @@ export default function DoctorVideoCallPage() {
         </div>
       )}
 
-      {/* Live Timer Badge - Only during call */}
-      {callStartTime && !showPostCallModal && (
+      {!loading && !showPostCallModal && (
         <div className="absolute top-2 right-2 sm:top-4 sm:right-4 bg-white/90 backdrop-blur-sm px-2 py-1 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl shadow-lg z-10">
           <p className="text-sm font-bold text-gray-900">
             <TranslatedText>Duration</TranslatedText>: {Math.floor(callDurationSeconds / 60)}:{String(callDurationSeconds % 60).padStart(2, '0')}
@@ -544,11 +300,9 @@ export default function DoctorVideoCallPage() {
         </div>
       )}
 
-      {/* Post-Call Screen - Replaces video frame */}
       {showPostCallModal && (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 z-50">
           <div className="bg-white rounded-3xl shadow-2xl p-5 sm:p-8 max-w-[min(90vw,26rem)] w-full mx-4">
-            {/* Success Icon */}
             <div className="text-center mb-4 sm:mb-8">
               <div className="w-14 h-14 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
                 <Video className="w-7 h-7 sm:w-10 sm:h-10 text-blue-600" />
@@ -561,7 +315,6 @@ export default function DoctorVideoCallPage() {
               </p>
             </div>
 
-            {/* Patient Summary Card */}
             {appointmentData && (
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-3 sm:p-6 mb-4 sm:mb-8">
                 <div className="flex items-center space-x-4 mb-4">
@@ -590,7 +343,6 @@ export default function DoctorVideoCallPage() {
               </div>
             )}
 
-            {/* Action Buttons */}
             <div className="space-y-3">
               <button
                 onClick={handlePrescribe}
@@ -611,7 +363,3 @@ export default function DoctorVideoCallPage() {
     </div>
   );
 }
-
-
-
-

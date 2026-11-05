@@ -14,7 +14,7 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-const availableLocales = ['en', 'es', 'fr', 'de', 'hi', 'zh', 'ar', 'pt', 'ja', 'bn', 'te', 'mr', 'ta', 'gu'];
+const availableLocales = ['en', 'hi'];
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Read locale synchronously on first render to prevent English → Hindi flash
