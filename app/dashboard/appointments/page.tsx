@@ -17,6 +17,7 @@ import { useDoctorAppointments } from '@/app/hooks/queries/useDoctorAppointments
 import { useUpdateAppointmentStatus } from '@/app/hooks/mutations/useUpdateAppointmentStatus';
 import { useChangeAppointmentMode } from '@/app/hooks/mutations/useChangeAppointmentMode';
 import VerificationGuard from '@/app/components/VerificationGuard';
+import { useCall } from '@/app/components/CallProvider';
 
 interface Appointment {
   aid: string;
@@ -34,6 +35,8 @@ interface Appointment {
   token_number?: number;
   estimated_wait_minutes?: number;
   cancellation_reason?: string;
+  callAvailable?: boolean;
+  callOpensAt?: string;
   refund_requested?: boolean;
   refund_amount?: number;
   refund_reason?: string;
@@ -159,6 +162,7 @@ function MiniCalendar({ appointments }: { appointments: Appointment[] }) {
 function AppointmentsContent() {
   const token = useAuthToken();
   const { translate } = useLanguage();
+  const { startCall } = useCall();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as any;
@@ -443,12 +447,13 @@ function AppointmentsContent() {
                             </button>
                           </>
                         )}
-                        {((apt.status === 'confirmed' || apt.status === 'in_progress') || (apt.status === 'scheduled' && apt.mode === 'online')) && (
+                        {((apt.status === 'confirmed' || apt.status === 'in_progress') &&
+                          (apt.mode !== 'online' || Boolean((apt as any).callAvailable))) && (
                           <>
                             <button
                               onClick={() => {
                                 if (apt.mode === 'online') {
-                                  window.location.href = `/dashboard/video-call/${apt.aid}`;
+                                  void startCall(apt.aid);
                                 } else {
                                   router.push(`/dashboard/prescriptions/new?aid=${apt.aid}`);
                                 }
@@ -458,7 +463,7 @@ function AppointmentsContent() {
                               {apt.mode === 'online' ? <Video className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
                               <TranslatedText>
                                 {apt.mode === 'online' 
-                                  ? (apt.status === 'in_progress' ? 'Rejoin Call' : 'Join Video Call') 
+                                  ? (apt.status === 'in_progress' ? 'Rejoin Call' : 'Start Video Call') 
                                   : 'Complete Visit'}
                               </TranslatedText>
                             </button>

@@ -7,6 +7,7 @@ import CollapsibleSidebar from '@/app/components/CollapsibleSidebar';
 import ProfileBanner from '@/app/components/ProfileBanner';
 import EmergencyBanner from '@/app/components/EmergencyBanner';
 import { AuthTokenProvider } from '@/lib/auth-token-context';
+import { CallProvider } from '@/app/components/CallProvider';
 
 interface DashboardLayoutClientProps {
   user: any;
@@ -27,6 +28,7 @@ export default function DashboardLayoutClient({ user, accessToken, children }: D
 
   return (
     <AuthTokenProvider token={accessToken || null}>
+      <CallProvider>
       <div className="min-h-screen flex bg-blue-50 lg:bg-white">
         {/* Desktop Sidebar - sticky, always visible on large screens */}
         <div
@@ -91,6 +93,7 @@ export default function DashboardLayoutClient({ user, accessToken, children }: D
           </main>
         </div>
       </div>
+      </CallProvider>
     </AuthTokenProvider>
   );
 }
