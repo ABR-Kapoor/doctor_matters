@@ -1,6 +1,6 @@
 import { HeaderTitle } from '@/components/HeaderOptions';
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, StatusBar } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pill, Plus, X, ArrowLeft, ChevronLeft, User, Search, Save, FileText, Sparkles, TriangleAlert } from 'lucide-react-native';
 import { MarkdownText } from '@/components/MarkdownText';
@@ -11,7 +11,9 @@ import { useCreatePrescription, useGeneratePrescription, useSendPrescription } f
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { useNotification } from '@/lib/NotificationContext';
+import Toast from 'react-native-toast-message';
 import { COLORS, FONTS } from '@/constants/theme';
+import { MedicineIcon3D } from '@/components/MedicineIcon3D';
 
 const MEDICINE_SYSTEMS = [
   { key: 'homeopathy', label: 'Homeopathy' },
@@ -196,6 +198,7 @@ export default function NewPrescriptionScreen() {
   };
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" animated />
       <Stack.Screen options={{ 
         title: 'New Prescription',
         headerTitle: () => <HeaderTitle title="New Prescription" subtitle="Create Rx & Treatment Plan" />,
@@ -213,7 +216,7 @@ export default function NewPrescriptionScreen() {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={styles.iconBox}><User size={20} color={COLORS.primary} /></View>
-              <View>
+              <View style={styles.cardHeaderTextContainer}>
                 <Text style={styles.cardTitle}><TranslatedText>Patient Selection</TranslatedText></Text>
                 <Text style={styles.cardSubtitle}>Choose who this prescription is for</Text>
               </View>
@@ -255,7 +258,7 @@ export default function NewPrescriptionScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}><Save size={20} color={COLORS.primary} /></View>
-            <View>
+            <View style={styles.cardHeaderTextContainer}>
               <Text style={styles.cardTitle}><TranslatedText>Clinical Assessment</TranslatedText></Text>
               <Text style={styles.cardSubtitle}>Diagnosis, symptoms and therapeutic system</Text>
             </View>
@@ -330,16 +333,15 @@ export default function NewPrescriptionScreen() {
         {/* Medicines Section Card */}
         <View style={styles.card}>
           <View style={styles.cardHeaderBetween}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={styles.iconBox}><Pill size={20} color={COLORS.primary} /></View>
-              <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+              <View style={styles.iconBox}><MedicineIcon3D size={22} /></View>
+              <View style={styles.cardHeaderTextContainer}>
                 <Text style={styles.cardTitle}><TranslatedText>Medicines & Dosage</TranslatedText></Text>
                 <Text style={styles.cardSubtitle}>{medicines.length} medicine{medicines.length > 1 ? 's' : ''} prescribed</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.addBtn} onPress={addMedicine} activeOpacity={0.8}>
-              <Plus size={16} color={COLORS.white} />
-              <Text style={styles.addBtnText}>Add Rx</Text>
+            <TouchableOpacity style={styles.addBtn} onPress={addMedicine} activeOpacity={0.8} accessibilityLabel="Add Medicine">
+              <Plus size={18} color={COLORS.white} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
 
@@ -354,7 +356,7 @@ export default function NewPrescriptionScreen() {
             <View key={index} style={styles.medicineBox}>
               <View style={styles.medicineHeader}>
                 <View style={styles.medicineNumBadge}>
-                  <Text style={styles.medicineNumText}>#{index + 1}</Text>
+                  <MedicineIcon3D size={16} />
                 </View>
                 {medicines.length > 1 && (
                   <TouchableOpacity style={styles.removeBtn} onPress={() => removeMedicine(index)} activeOpacity={0.7}>
@@ -368,6 +370,8 @@ export default function NewPrescriptionScreen() {
                 <TextInput 
                   style={styles.input} 
                   value={medicine.name} 
+                  multiline
+                  scrollEnabled={false}
                   onChangeText={(t) => updateMedicine(index, 'name', t)} 
                   placeholder="e.g. Paracetamol 500mg / Ashwagandha" 
                   placeholderTextColor="#94A3B8" 
@@ -379,33 +383,38 @@ export default function NewPrescriptionScreen() {
                 <TextInput 
                   style={styles.input} 
                   value={medicine.dosage} 
+                  multiline
+                  scrollEnabled={false}
                   onChangeText={(t) => updateMedicine(index, 'dosage', t)} 
                   placeholder="e.g. 1 Tablet / 5ml" 
                   placeholderTextColor="#94A3B8" 
                 />
               </View>
 
-              <View style={styles.rowGrid}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Frequency <Text style={{ color: COLORS.error }}>*</Text></Text>
-                  <TextInput 
-                    style={styles.input} 
-                    value={medicine.frequency} 
-                    onChangeText={(t) => updateMedicine(index, 'frequency', t)} 
-                    placeholder="e.g. 1-0-1 (Twice daily)" 
-                    placeholderTextColor="#94A3B8" 
-                  />
-                </View>
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: 12 }]}>
-                  <Text style={styles.label}>Duration <Text style={{ color: COLORS.error }}>*</Text></Text>
-                  <TextInput 
-                    style={styles.input} 
-                    value={medicine.duration} 
-                    onChangeText={(t) => updateMedicine(index, 'duration', t)} 
-                    placeholder="e.g. 5 Days / 2 Weeks" 
-                    placeholderTextColor="#94A3B8" 
-                  />
-                </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Frequency <Text style={{ color: COLORS.error }}>*</Text></Text>
+                <TextInput 
+                  style={styles.input} 
+                  value={medicine.frequency} 
+                  multiline
+                  scrollEnabled={false}
+                  onChangeText={(t) => updateMedicine(index, 'frequency', t)} 
+                  placeholder="e.g. 1-0-1 (Twice daily)" 
+                  placeholderTextColor="#94A3B8" 
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Duration <Text style={{ color: COLORS.error }}>*</Text></Text>
+                <TextInput 
+                  style={styles.input} 
+                  value={medicine.duration} 
+                  multiline
+                  scrollEnabled={false}
+                  onChangeText={(t) => updateMedicine(index, 'duration', t)} 
+                  placeholder="e.g. 5 Days / 2 Weeks" 
+                  placeholderTextColor="#94A3B8" 
+                />
               </View>
 
               <View style={[styles.inputGroup, { marginBottom: 4 }]}>
@@ -413,6 +422,8 @@ export default function NewPrescriptionScreen() {
                 <TextInput 
                   style={styles.input} 
                   value={medicine.notes || ''} 
+                  multiline
+                  scrollEnabled={false}
                   onChangeText={(t) => updateMedicine(index, 'notes', t)} 
                   placeholder="e.g. After meal with warm water" 
                   placeholderTextColor="#94A3B8" 
@@ -436,7 +447,7 @@ export default function NewPrescriptionScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}><FileText size={20} color={COLORS.primary} /></View>
-            <View>
+            <View style={styles.cardHeaderTextContainer}>
               <Text style={styles.cardTitle}><TranslatedText>Advice & Care Plan</TranslatedText></Text>
               <Text style={styles.cardSubtitle}>Special precautions and dietary guidance</Text>
             </View>
@@ -524,6 +535,7 @@ export default function NewPrescriptionScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+      <Toast topOffset={70} />
     </SafeAreaView>
   );
 }
@@ -549,18 +561,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 2, 
-    marginBottom: 20 
+    marginBottom: 20,
+    overflow: 'hidden',
   },
   cardHeader: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    marginBottom: 18 
+    marginBottom: 18,
+    width: '100%',
   },
   cardHeaderBetween: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'space-between', 
-    marginBottom: 18 
+    marginBottom: 18,
+    width: '100%',
+  },
+  cardHeaderTextContainer: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 4,
   },
   iconBox: { 
     width: 42, 
@@ -569,7 +589,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEF3FB', 
     justifyContent: 'center', 
     alignItems: 'center', 
-    marginRight: 14 
+    marginRight: 14,
+    flexShrink: 0,
   },
   cardTitle: { 
     fontSize: 17, 
@@ -584,6 +605,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#64748B',
     marginTop: 2,
+    flexShrink: 1,
+    flexWrap: 'wrap',
+    lineHeight: 18,
   },
   
   searchBox: { 
@@ -684,29 +708,24 @@ const styles = StyleSheet.create({
     fontWeight: '500', 
     fontSize: 14.5, 
     borderWidth: 1, 
-    borderColor: '#E2E8F0' 
+    borderColor: '#E2E8F0',
+    minHeight: 48,
+    textAlignVertical: 'top',
+    lineHeight: 20,
   },
   
   addBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: COLORS.primary, 
-    paddingHorizontal: 14, 
-    paddingVertical: 8, 
-    borderRadius: 12, 
+    alignItems: 'center',
     justifyContent: 'center',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 2,
-  },
-  addBtnText: { 
-    color: '#FFFFFF', 
-    fontFamily: FONTS.bold, 
-    fontWeight: '700', 
-    fontSize: 12.5, 
-    marginLeft: 4 
   },
   
   medicineBox: { 
@@ -725,16 +744,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   medicineNumBadge: {
+    width: 24,
+    height: 24,
     backgroundColor: '#EEF3FB',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  medicineNumText: {
-    fontSize: 11,
-    fontFamily: FONTS.bold,
-    fontWeight: '700',
-    color: COLORS.primary,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   removeBtn: { 
     padding: 6,

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Pill, Plus, X, ArrowLeft, Save, FileText, ChevronLeft } from 'lucide-react-native';
+import { Plus, X, ArrowLeft, Save, FileText, ChevronLeft } from 'lucide-react-native';
+import { MedicineIcon3D } from '@/components/MedicineIcon3D';
 import { MarkdownText } from '@/components/MarkdownText';
 import { TranslatedText } from '@/components/TranslatedText';
 import { useDoctorPrescription } from '@/hooks/queries/doctorQueries';
@@ -166,7 +167,7 @@ export default function EditPrescriptionScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeaderBetween}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={styles.iconBox}><Pill size={20} color={COLORS.text} /></View>
+              <View style={styles.iconBox}><MedicineIcon3D size={22} /></View>
               <Text style={styles.cardTitle}><TranslatedText>Medicines</TranslatedText></Text>
             </View>
             <TouchableOpacity style={styles.addBtn} onPress={addMedicine}>

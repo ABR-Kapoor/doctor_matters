@@ -17,16 +17,17 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronLeft,
   Send,
   Video,
   MessageSquare,
   AlertCircle,
   CheckCheck,
+  User,
 } from 'lucide-react-native';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { useDoctorIdentity, useDoctorProfile } from '@/hooks/queries/doctorQueries';
 import { COLORS, FONTS } from '@/constants/theme';
+import { useCall } from '@/components/CallProvider';
 
 const BRAND_GREEN = '#048256';
 const BRAND_GREEN_LIGHT = '#EDF7E3';
@@ -66,6 +67,8 @@ export default function DoctorAppointmentChatScreen() {
   const { data: identity } = useDoctorIdentity(getToken);
   const { data: profile } = useDoctorProfile(identity?.uid || userId || null, getToken);
   const queryClient = useQueryClient();
+  const { session, startCall } = useCall();
+  const [startingCall, setStartingCall] = useState(false);
 
   const isConfirmedStatus = (s?: string) => {
     const val = String(s || '').trim().toLowerCase();
@@ -262,14 +265,24 @@ export default function DoctorAppointmentChatScreen() {
     }
   };
 
-  const handleStartCall = () => {
-    router.push({
-      pathname: '/video-call',
-      params: {
-        aid: String(aid),
-        pid: String(pid || appointmentInfo?.pid || ''),
-      },
-    });
+  const handleStartCall = async () => {
+    if (!aid || startingCall) return;
+    if (session?.aid === String(aid) && session.status === 'active') {
+      router.push({
+        pathname: '/video-call',
+        params: { aid: String(aid), pid: String(pid || appointmentInfo?.pid || '') },
+      });
+      return;
+    }
+    setStartingCall(true);
+    const started = await startCall(String(aid));
+    setStartingCall(false);
+    if (started) {
+      router.push({
+        pathname: '/video-call',
+        params: { aid: String(aid), pid: String(pid || appointmentInfo?.pid || '') },
+      });
+    }
   };
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
@@ -359,19 +372,15 @@ export default function DoctorAppointmentChatScreen() {
 
       {/* Header with Patient Profile, Name, Status and Call Action */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityLabel="Back"
-        >
-          <ChevronLeft size={22} color={COLORS.text} />
-        </TouchableOpacity>
-
-        {/* Patient Profile Picture */}
-        <View style={styles.avatarContainer}>
+        {/* Profile Icon (top-left) */}
+        <View style={styles.avatarContainer} accessibilityLabel="Profile">
           {patientPhoto ? (
             <Image source={{ uri: patientPhoto }} style={styles.headerAvatar} />
-          ) : null}
+          ) : (
+            <View style={styles.patientAvatarPlaceholder}>
+              <User size={22} color={BRAND_GREEN} />
+            </View>
+          )}
           <View
             style={[
               styles.avatarStatusBadge,
@@ -392,15 +401,22 @@ export default function DoctorAppointmentChatScreen() {
         </View>
 
         {/* Action button: Call */}
-        {canChat && (
+        {(appointmentInfo?.call_available ?? appointmentInfo?.callAvailable) && (
           <TouchableOpacity
-            style={styles.callActionButton}
-            onPress={handleStartCall}
+            style={[styles.callActionButton, startingCall && { opacity: 0.7 }]}
+            onPress={() => { void handleStartCall(); }}
             activeOpacity={0.8}
             accessibilityLabel="Start Video Call"
+            disabled={startingCall}
           >
-            <Video size={16} color="#FFFFFF" />
-            <Text style={styles.callActionText}>Call</Text>
+            {startingCall ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Video size={16} color="#FFFFFF" />
+            )}
+            <Text style={styles.callActionText}>
+              {session?.aid === String(aid) && session.status === 'active' ? 'Rejoin' : 'Call'}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -532,17 +548,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
-  },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
   },
   avatarContainer: {
     position: 'relative',

@@ -8,6 +8,7 @@ import { useDoctorPatientDetails } from '@/hooks/queries/doctorQueries';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { COLORS, FONTS } from '@/constants/theme';
+import { MedicineIcon3D } from '@/components/MedicineIcon3D';
 
 export default function PatientDetailScreen() {
   const router = useRouter();
@@ -162,7 +163,7 @@ export default function PatientDetailScreen() {
           <View style={styles.healthCardFull}>
             <View style={styles.healthHeaderRow}>
               <View style={[styles.healthIconBox, { backgroundColor: COLORS.primaryLight || '#E5EDFF' }]}>
-                <Pill size={14} color={COLORS.text} />
+                <MedicineIcon3D size={16} />
               </View>
               <Text style={styles.healthTitle}>Current Medications</Text>
             </View>
@@ -219,50 +220,46 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.black, },
   prescriptionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight || '#E5EDFF', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 8, justifyContent: 'center', minHeight: 48 },
   prescriptionBtnText: { color: COLORS.text, fontFamily: FONTS.bold, fontWeight: '700', fontSize: 15 },
-  
-  profileCard: { backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden', },
-  profileHeaderBg: { height: 56, backgroundColor: COLORS.primaryLight || '#E5EDFF' },
-  profileContent: { alignItems: 'center', width: '100%', marginTop: -40, paddingHorizontal: 16, paddingBottom: 24 },
-  avatarWrapper: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.white, padding: 4, marginBottom: 16 },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 36, backgroundColor: COLORS.surface },
+   profileCard: { backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden' },
+  profileHeaderBg: { height: 64, backgroundColor: COLORS.primaryLight || '#E5EDFF' },
+  profileContent: { alignItems: 'center', width: '100%', marginTop: -40, paddingHorizontal: 20, paddingBottom: 24 },
+  avatarWrapper: { width: 84, height: 84, borderRadius: 42, backgroundColor: COLORS.white, padding: 4, marginBottom: 14 },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 38, backgroundColor: COLORS.surface },
   profileName: { fontSize: 20, fontFamily: FONTS.bold, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
   profileSubtitle: { fontSize: 13, fontFamily: FONTS.serif,  color: COLORS.gray, marginBottom: 16 },
   
   contactItemRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  contactContainer: { width: '100%', marginTop: 8, gap: 6 },
+  contactContainer: { width: '100%', marginTop: 8, gap: 8 },
   
   contactIconBg: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#5c85d9', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   contactText: { fontSize: 14, fontFamily: FONTS.medium, fontWeight: '500', color: COLORS.gray, textAlign: 'center' },
   
-  
-  
-
   sectionTitle: { fontSize: 20, fontFamily: FONTS.serif,  color: COLORS.text, marginBottom: 16, marginLeft: 4 },
   
-  healthGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 32 },
-  healthCard: { width: '48%', backgroundColor: COLORS.white, borderRadius: 12, padding: 8, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12, },
-  healthCardFull: { width: '100%', backgroundColor: COLORS.white, borderRadius: 12, padding: 8, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12, },
-  healthHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  healthIconBox: { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 8, marginRight: 8 },
-  healthTitle: { fontSize: 14, fontFamily: FONTS.serif,  color: COLORS.text },
+  healthGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 28 },
+  healthCard: { width: '48%', backgroundColor: COLORS.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12 },
+  healthCardFull: { width: '100%', backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12 },
+  healthHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  healthIconBox: { width: 30, height: 30, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  healthTitle: { fontSize: 14, fontFamily: FONTS.bold, fontWeight: '700', color: COLORS.text },
   
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  tag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 11, fontFamily: FONTS.bold, fontWeight: '700', overflow: 'hidden' },
+  tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, fontSize: 11, fontFamily: FONTS.bold, fontWeight: '700', overflow: 'hidden' },
   tagRed: { backgroundColor: '#fef2f2', color: COLORS.error },
   tagAmber: { backgroundColor: '#fffbeb', color: '#d97706' },
   tagBlue: { backgroundColor: COLORS.primaryLight || '#E5EDFF', color: COLORS.text },
-  noDataText: { fontSize: 13, fontFamily: FONTS.medium, fontWeight: '500', color: COLORS.gray, fontStyle: 'italic' },
+  noDataText: { fontSize: 13, fontFamily: FONTS.medium, fontWeight: '500', color: COLORS.gray, fontStyle: 'italic', marginTop: 4 },
   
-  historyCard: { backgroundColor: COLORS.white, borderRadius: 12, padding: 8, borderWidth: 1, borderColor: '#e2e8f0', },
-  aptRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  aptBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.surface },
-  aptIcon: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
+  historyCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  aptRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  aptBorder: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  aptIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
   aptComplaint: { fontSize: 15, fontFamily: FONTS.bold, fontWeight: '700', color: COLORS.text },
   aptDate: { fontSize: 13, fontFamily: FONTS.medium, fontWeight: '500', color: COLORS.gray, marginTop: 4 },
   aptStatus: { backgroundColor: COLORS.primaryLight || '#E5EDFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   aptStatusText: { fontSize: 11, fontFamily: FONTS.bold, fontWeight: '700', color: COLORS.text, textTransform: 'uppercase' },
   
-  emptyText: { color: COLORS.gray, fontFamily: FONTS.medium, fontWeight: '500', textAlign: 'center' },
+  emptyText: { color: COLORS.gray, fontFamily: FONTS.medium, fontWeight: '500', textAlign: 'center', paddingVertical: 12 },
   primaryBtn: { marginTop: 24, backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
   primaryBtnText: { color: COLORS.text, fontFamily: FONTS.bold, fontWeight: '700', fontSize: 16 },
 });

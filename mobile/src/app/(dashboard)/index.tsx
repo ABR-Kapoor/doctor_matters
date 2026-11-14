@@ -9,22 +9,21 @@ import { MiniCalendar } from '@/components/MiniCalendar';
 import { useDoctorIdentity, useDoctorAppointments, useDoctorProfile, useDoctorFinance, useDoctorNotifications } from '@/hooks/queries/doctorQueries';
 import { useUpdateAppointmentStatus, useChangeAppointmentMode } from '@/hooks/mutations/doctorMutations';
 import { useRouter, useFocusEffect, useLocalSearchParams, Tabs } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { useQueryClient } from '@tanstack/react-query';
 import { COLORS, FONTS } from '@/constants/theme';
+import { useCall } from '@/components/CallProvider';
 
 export default function AppointmentsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const navBarHeight = 74 + Math.max(insets.bottom, 14);
   const [refreshing, setRefreshing] = useState(false);
   const { focusAid } = useLocalSearchParams<{ focusAid?: string }>();
   const [activeTab, setActiveTab] = useState('pending');
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const [startingAid, setStartingAid] = useState<string | null>(null);
+  const { session, startCall } = useCall();
 
   const { getToken, userId, signOut } = useAuth();
   const { data: identity, isLoading: isIdentityLoading, error: identityError } = useDoctorIdentity(getToken);
@@ -59,15 +58,16 @@ export default function AppointmentsScreen() {
     router.setParams({ focusAid: undefined } as any);
   }, [focusAid, aptsData, activeTab, router]);
 
-  const canJoinVideoCall = (apt: any, currentTime: number) => {
-    if (apt.status === 'in_progress') return true;
-    if (apt.status !== 'confirmed') return false;
-    const dateStr = String(apt.scheduled_date ?? apt.scheduledDate ?? '').slice(0, 10);
-    const timeStr = String(apt.scheduled_time ?? apt.scheduledTime ?? '').slice(0, 5);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !/^\d{2}:\d{2}$/.test(timeStr)) return false;
-    const start = new Date(`${dateStr}T${timeStr}:00`).getTime();
-    const fiveMinBefore = start - 5 * 60 * 1000;
-    return currentTime >= fiveMinBefore;
+  const handleStartCall = async (aid: string, pid?: string) => {
+    if (startingAid) return;
+    if (session?.aid === aid && session.status === 'active') {
+      router.push({ pathname: '/video-call', params: { aid, pid } });
+      return;
+    }
+    setStartingAid(aid);
+    const started = await startCall(aid);
+    setStartingAid(null);
+    if (started) router.push({ pathname: '/video-call', params: { aid, pid } });
   };
 
   const isWrongRole = (identityError as any)?.code === 'ROLE_MISMATCH';
@@ -204,7 +204,7 @@ export default function AppointmentsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'top']}>
       <ScrollView 
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: navBarHeight }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl 
@@ -403,7 +403,8 @@ export default function AppointmentsScreen() {
       ) : (
         <View style={styles.list}>
           {currentAppointments.map((apt: any, index: number) => {
-            const hasVideo = (apt.mode === 'online' || apt.mode === 'video') && (apt.status === 'confirmed' || apt.status === 'in_progress') && canJoinVideoCall(apt, now);
+            const callAvailable = apt.call_available ?? apt.callAvailable;
+            const hasVideo = (apt.mode === 'online' || apt.mode === 'video') && (apt.status === 'confirmed' || apt.status === 'in_progress') && callAvailable;
             const hasCompleteVisit = (apt.mode === 'offline' || apt.mode === 'clinic' || apt.mode === 'in-person' || apt.mode === 'in_person') && (apt.status === 'confirmed' || apt.status === 'in_progress');
             const hasMap = isInClinicMode(apt) && apt.status !== 'cancelled' && hasClinicLocation;
             const canConfirm = isPendingStatus(apt.status);
@@ -461,11 +462,16 @@ export default function AppointmentsScreen() {
                 {/* Primary Action Row */}
                 {hasVideo && (
                   <TouchableOpacity 
-                    style={styles.mainActionBtn}
-                    onPress={() => router.push({ pathname: '/video-call', params: { aid: apt.aid ?? apt.id ?? apt._id, pid: apt.pid ?? apt.patient_id ?? apt.patientId } })}
+                    style={[styles.mainActionBtn, startingAid === String(apt.aid ?? apt.id ?? apt._id) && { opacity: 0.7 }]}
+                    disabled={Boolean(startingAid)}
+                    onPress={() => { void handleStartCall(String(apt.aid ?? apt.id ?? apt._id ?? ''), String(apt.pid ?? apt.patient_id ?? apt.patientId ?? '')); }}
                   >
                     <View style={styles.mainActionIconBg}>
-                      <Video size={20} color={COLORS.white} />
+                      {startingAid === String(apt.aid ?? apt.id ?? apt._id) ? (
+                        <ActivityIndicator size="small" color={COLORS.white} />
+                      ) : (
+                        <Video size={20} color={COLORS.white} />
+                      )}
                     </View>
                     <View style={styles.mainActionTextContainer}>
                       <Text style={styles.mainActionTitle}>
@@ -527,10 +533,9 @@ export default function AppointmentsScreen() {
                   <View style={{marginTop: 16}}>
                     <Text style={styles.quickActionsLabel}><TranslatedText>QUICK ACTIONS</TranslatedText></Text>
                     <View style={styles.quickActionsGrid}>
-                        {canChat && (
+                      {canChat && (
                         <TouchableOpacity
-                          style={[styles.quickActionBox, { width: 'auto', paddingVertical: 8,
-    marginVertical: 6, paddingHorizontal: 12, marginRight: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#EDF7E3', borderWidth: 1, borderColor: '#C6E8D2', position: 'relative' }]}
+                          style={[styles.quickActionBox, { width: 'auto', paddingVertical: 7, marginVertical: 3, paddingHorizontal: 12, marginRight: 6, flexDirection: 'row', alignItems: 'center', backgroundColor: '#EDF7E3', borderWidth: 1, borderColor: '#C6E8D2', borderRadius: 10, position: 'relative' }]}
                           onPress={() => router.push({ 
                             pathname: '/chat/[aid]', 
                             params: { 
@@ -542,13 +547,13 @@ export default function AppointmentsScreen() {
                             } 
                           })}
                         >
-                          <MessageSquare size={16} color="#048256" style={{ marginRight: 6 }} />
-                          <Text style={[styles.quickActionTitle, { color: '#048256', fontWeight: '700' }]}>
+                          <MessageSquare size={15} color="#048256" style={{ marginRight: 5 }} />
+                          <Text style={[styles.quickActionTitle, { color: '#048256', fontSize: 13, fontWeight: '700' }]}>
                             <TranslatedText>Chat</TranslatedText>
                           </Text>
                           {Number(apt.unread_messages_count || apt.unreadMessagesCount || 0) > 0 && (
                             <View style={{
-                              marginLeft: 6,
+                              marginLeft: 5,
                               backgroundColor: '#EF4444',
                               borderRadius: 10,
                               minWidth: 18,
@@ -566,10 +571,10 @@ export default function AppointmentsScreen() {
                       )}
                       {canSwitchMode && (
                         <TouchableOpacity 
-                          style={[styles.quickActionBox, { width: 'auto', paddingVertical: 8, marginVertical: 6, paddingHorizontal: 12, marginRight: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#5c85d9', borderRadius: 12 }]} 
+                          style={[styles.quickActionBox, { width: 'auto', paddingVertical: 7, marginVertical: 3, paddingHorizontal: 12, marginRight: 6, flexDirection: 'row', alignItems: 'center', backgroundColor: '#5c85d9', borderRadius: 10 }]} 
                           onPress={() => changeMode.mutate({ aid: apt.aid ?? apt.id ?? apt._id, mode: apt.mode === 'online' ? 'offline' : 'online', uid: uid || '', token: getToken })}
                         >
-                          <RefreshCw size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <RefreshCw size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
                           <Text style={[styles.quickActionTitle, { color: '#FFFFFF', fontSize: 13, fontWeight: '700' }]}>
                             <TranslatedText>Switch Mode</TranslatedText>
                           </Text>
@@ -578,17 +583,17 @@ export default function AppointmentsScreen() {
 
                       {canPrescribe && (
                         <TouchableOpacity 
-                          style={[styles.quickActionBox, { width: 'auto', paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3E8FF' }]} 
+                          style={[styles.quickActionBox, { width: 'auto', paddingVertical: 7, marginVertical: 3, paddingHorizontal: 12, marginRight: 6, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3E8FF', borderRadius: 10 }]} 
                           onPress={() => router.push({ pathname: '/prescriptions/new', params: { pid: apt.pid ?? apt.patient_id ?? apt.patientId, aid: apt.aid ?? apt.id ?? apt._id, ...(apt.status === 'in_progress' ? { ai: '1' } : {}) } })}
                         >
-                          <FileText size={16} color={COLORS.text} style={{ marginRight: 6 }} />
-                          <Text style={styles.quickActionTitle}>
+                          <FileText size={15} color={COLORS.text} style={{ marginRight: 5 }} />
+                          <Text style={[styles.quickActionTitle, { fontSize: 13, fontWeight: '700' }]}>
                             <TranslatedText>Create Prescription</TranslatedText>
                           </Text>
                         </TouchableOpacity>
                       )}
 
-                      {canCancel && (<TouchableOpacity style={[styles.quickActionBox, { width: 'auto', paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEE2E2' }]} onPress={() => updateStatus.mutate({ aid: apt.aid ?? apt.id ?? apt._id, status: 'cancelled', uid: uid || '', token: getToken }, { onSuccess: () => setActiveTab('cancelled') })}><X size={16} color={COLORS.text} style={{marginRight: 6}} /><Text style={styles.quickActionTitle}><TranslatedText>Cancel</TranslatedText></Text></TouchableOpacity>)}
+                      {canCancel && (<TouchableOpacity style={[styles.quickActionBox, { width: 'auto', paddingVertical: 7, marginVertical: 3, paddingHorizontal: 12, marginRight: 6, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEE2E2', borderRadius: 10 }]} onPress={() => updateStatus.mutate({ aid: apt.aid ?? apt.id ?? apt._id, status: 'cancelled', uid: uid || '', token: getToken }, { onSuccess: () => setActiveTab('cancelled') })}><X size={15} color={COLORS.text} style={{marginRight: 5}} /><Text style={[styles.quickActionTitle, { fontSize: 13, fontWeight: '700' }]}><TranslatedText>Cancel</TranslatedText></Text></TouchableOpacity>)}
                     </View>
                   </View>
                 )}
@@ -646,7 +651,6 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 14,
     paddingTop: 8,
-    paddingBottom: 160,
   },
   header: {
     flexDirection: 'row',
@@ -1127,7 +1131,7 @@ const styles = StyleSheet.create({
   footerImage: {
     width: '100%',
     height: '100%',
-  }
+  },
 });
 
 

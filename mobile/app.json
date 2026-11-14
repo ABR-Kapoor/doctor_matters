@@ -1,12 +1,16 @@
 {
   "expo": {
-    "name": "aurasutra-doctor",
+    "name": "aurasutra sarthi",
     "slug": "aurasutra-doctor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/app-icon-square.png",
     "scheme": "aurasutradoctor",
     "userInterfaceStyle": "automatic",
+    "androidNavigationBar": {
+      "barStyle": "light-content",
+      "backgroundColor": "#5C85D9"
+    },
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {
@@ -19,10 +23,9 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/app-icon.png",
+        "monochromeImage": "./assets/images/app-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -57,13 +60,20 @@
       "expo-audio",
       "./plugins/withCleartextTraffic",
       "expo-dev-client",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "doctor-updates-v2",
+          "color": "#208AEF"
+        }
+      ],
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#f6f7f3",
+          "image": "./assets/images/splash-blank.png",
+          "imageWidth": 1,
+          "resizeMode": "contain"
         }
       ],
       [

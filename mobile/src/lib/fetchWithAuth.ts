@@ -1,6 +1,11 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+// Production backend URL — this is the canonical fallback used when the env
+// var is not baked into the bundle (e.g. EAS build ran without the secret).
+// Update this constant whenever the production domain changes.
+const PRODUCTION_API_URL = 'https://doctor.aurasutra.org';
+
 // This machine's LAN address changes with every network it joins (Wi-Fi,
 // hotspot, Ethernet, ...), so a hardcoded host in .env goes stale the moment the
 // phone switches networks and every request then times out. In development we
@@ -12,9 +17,14 @@ function resolveApiBaseUrl(): string {
   const configured = process.env.EXPO_PUBLIC_API_URL;
   const normalized = configured ? configured.replace(/\/$/, '') : '';
 
-  // If a public domain, tunnel, or remote backend is explicitly configured (e.g. doctor.aurasutra.org),
-  // preserve it directly instead of substituting the local Metro IP.
-  if (normalized && (normalized.startsWith('https://') || normalized.includes('aurasutra.org') || normalized.includes('trycloudflare.com') || normalized.includes('vercel.app'))) {
+  // If a public domain, tunnel, or remote backend is explicitly configured
+  // (e.g. doctor.aurasutra.org), preserve it directly.
+  if (normalized && (
+    normalized.startsWith('https://') ||
+    normalized.includes('aurasutra.org') ||
+    normalized.includes('trycloudflare.com') ||
+    normalized.includes('vercel.app')
+  )) {
     return normalized;
   }
 
@@ -35,14 +45,16 @@ function resolveApiBaseUrl(): string {
 
   if (normalized) return normalized;
 
+  // Last resort: use the hardcoded production URL so a production APK built
+  // without the EAS env secret still works. In dev this logs a warning.
   if (__DEV__ && Platform.OS !== 'web') {
     console.warn(
-      '[fetchWithAuth] EXPO_PUBLIC_API_URL is not set and no dev-server host could be detected. ' +
-      'Set it in .env (e.g. http://192.168.x.x:3001) and rebuild, otherwise every request will fail.'
+      '[fetchWithAuth] EXPO_PUBLIC_API_URL is not set and no dev-server host could be ' +
+      'detected. Falling back to production URL. Set EXPO_PUBLIC_API_URL in .env for local dev.'
     );
   }
 
-  return '';
+  return PRODUCTION_API_URL;
 }
 
 export function getApiBaseUrl(): string {

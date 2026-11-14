@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Image, RefreshControl, Modal } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Image, RefreshControl, Modal, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, CheckCircle2, Clock, CheckCheck, X } from 'lucide-react-native';
+import { Bell, CheckCircle2, Clock, CheckCheck, X, ChevronLeft } from 'lucide-react-native';
 import { fetchWithAuth } from '../../lib/fetchWithAuth';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { useAuth } from '@clerk/expo';
@@ -94,24 +94,34 @@ export default function NotificationsPage() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} animated />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-      <Stack.Screen 
-        options={{ 
-          headerTitle: 'Notifications',
-          headerTitleAlign: 'center',
-          headerStyle: { backgroundColor: COLORS.background }, 
-          headerShadowVisible: false, 
-          headerTintColor: COLORS.text,
-          headerRight: () => null,
-        }} 
-      />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} animated />
+
+      {/* Top Navigation Header inside SafeAreaView */}
+      <View style={styles.navHeader}>
+        <TouchableOpacity
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.push('/');
+          }}
+          style={styles.headerBack}
+          activeOpacity={0.7}
+        >
+          <ChevronLeft size={20} color="#374151" />
+        </TouchableOpacity>
+        <Text style={styles.navHeaderTitle}>Notifications</Text>
+        <View style={styles.headerPlaceholder} />
+      </View>
 
       <ScrollView 
         contentContainerStyle={styles.scrollContent} 
@@ -262,6 +272,33 @@ export default function NotificationsPage() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  navHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  headerBack: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navHeaderTitle: {
+    fontSize: 18,
+    fontFamily: FONTS.bold,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  headerPlaceholder: {
+    width: 38,
+  },
   topActionBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -285,7 +322,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONTS.bold,
   },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 40 },
+  scrollContent: { 
+    paddingHorizontal: 16, 
+    paddingTop: 6, 
+    paddingBottom: 110, // Generous padding so notifications are completely visible above bottom nav
+  },
   emptyState: { 
     alignItems: 'center', 
     justifyContent: 'center',

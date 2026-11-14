@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   },
   navBar: {
     flexDirection: 'row',
-    minHeight: 74,
+    minHeight: 76,
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -131,11 +131,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   navText: {
-    fontSize: 11.5,
+    fontSize: 12.5,
     fontFamily: FONTS.semiBold,
     fontWeight: '600',
     color: COLORS.gray,
-    marginTop: 3,
+    marginTop: 5,
   },
   activeText: {
     color: COLORS.primary,

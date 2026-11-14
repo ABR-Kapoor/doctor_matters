@@ -10,10 +10,10 @@
         "./assets/*"
       ],
       "@aurasutra/doctor-shared": [
-        "../packages/shared/src/index.ts"
+        "./packages/shared/src/index.ts"
       ],
       "@aurasutra/doctor-shared/*": [
-        "../packages/shared/src/*"
+        "./packages/shared/src/*"
       ]
     }
   },
