@@ -36,7 +36,7 @@ export function useDoctorFinance(uid: string | null, token: string | null) {
       let isProfileComplete = false;
       let isVerified = false;
       if (profileData.success) {
-        const completeness = checkDoctorProfileComplete(profileData.doctor, profileData.user);
+        const completeness = checkDoctorProfileComplete(profileData.doctor, profileData.user, { requirePayout: false });
         isProfileComplete = completeness.isComplete;
         isVerified = Boolean(profileData.doctor?.is_verified);
       }

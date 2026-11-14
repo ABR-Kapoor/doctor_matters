@@ -44,7 +44,7 @@ export default function SidebarNavigation({ isCollapsed = false }: SidebarNaviga
         { name: 'Patients', href: '/dashboard/patients', icon: Users, restricted: true },
         { name: 'Prescriptions', href: '/dashboard/prescriptions', icon: Pill, restricted: true },
         { name: 'Reviews', href: '/dashboard/reviews', icon: MessageSquare, restricted: true },
-        { name: 'Finance', href: '/dashboard/finance', icon: IndianRupee, restricted: true },
+        { name: 'Wallet', href: '/dashboard/finance', icon: IndianRupee, restricted: true },
         { name: 'Profile', href: '/dashboard/profile', icon: User, restricted: false },
     ];
 
