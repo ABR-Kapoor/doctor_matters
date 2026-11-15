@@ -14,6 +14,7 @@ import { useAuth } from '@clerk/expo';
 import { globalShowToast as showToast } from '@/lib/NotificationContext';
 const Toast = { show: (opts: any) => { showToast && showToast(opts.text1, opts.text2, opts.type || 'info'); } };
 import { COLORS, FONTS } from '@/constants/theme';
+import { MedicineIcon3D } from '@/components/MedicineIcon3D';
 
 function AdherenceSummary({ stats }: { stats: any }) {
   if (!stats || !stats.total_doses) return null;
@@ -206,13 +207,13 @@ export default function PrescriptionsScreen() {
         {/* Sent Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Pill size={18} color={COLORS.text} />
+            <MedicineIcon3D size={20} style={{ marginRight: 6 }} />
             <Text style={styles.sectionTitle}>Sent Prescriptions ({sentPrescriptions.length})</Text>
           </View>
 
           {sentPrescriptions.length === 0 ? (
             <View style={styles.emptyState}>
-              <Pill size={48} color={COLORS.gray} />
+              <MedicineIcon3D size={48} style={{ marginBottom: 12 }} />
               <Text style={styles.emptyText}><TranslatedText>No sent prescriptions yet</TranslatedText></Text>
             </View>
           ) : (

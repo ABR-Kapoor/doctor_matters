@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Pill, CheckCircle, XCircle, Clock, History, ChevronLeft } from 'lucide-react-native';
+import { CheckCircle, XCircle, Clock, History, ChevronLeft } from 'lucide-react-native';
+import { MedicineIcon3D } from '@/components/MedicineIcon3D';
 import { TranslatedText } from '@/components/TranslatedText';
 import { useDoctorPrescriptionStats } from '@/hooks/queries/doctorQueries';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -53,7 +54,7 @@ export default function PrescriptionProgressScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
-          <Pill size={48} color="#cbd5e1" />
+          <MedicineIcon3D size={48} style={{ marginBottom: 12 }} />
           <Text style={styles.emptyTitle}><TranslatedText>No Adherence Data Yet</TranslatedText></Text>
           <Text style={styles.emptyText}><TranslatedText>Adherence tracking will appear once records are created for this prescription.</TranslatedText></Text>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -103,7 +104,7 @@ export default function PrescriptionProgressScreen() {
         </View>
         <View style={styles.statsContainer}>
           <View style={[styles.statBox, { backgroundColor: COLORS.primary }]}>
-            <Pill size={16} color="#64748b" />
+            <MedicineIcon3D size={18} />
             <Text style={[styles.statValue, { fontSize: 16 }]}>{stats.total_doses}</Text>
             <Text style={[styles.statLabel, { fontSize: 10 }]}><TranslatedText>Total</TranslatedText></Text>
           </View>
@@ -128,7 +129,7 @@ export default function PrescriptionProgressScreen() {
       {stats.medicine_breakdown?.length > 0 && (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Pill size={16} color={COLORS.secondary} />
+            <MedicineIcon3D size={18} style={{ marginRight: 6 }} />
             <Text style={styles.cardTitle}><TranslatedText>Medicine-wise Adherence</TranslatedText></Text>
           </View>
           {stats.medicine_breakdown.map((med: any, idx: number) => (
@@ -197,7 +198,7 @@ export default function PrescriptionProgressScreen() {
                 <View style={styles.premiumDoseHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                     <View style={styles.premiumIconContainer}>
-                      <Pill size={18} color="#1E293B" />
+                      <MedicineIcon3D size={20} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.premiumDoseTitle}>{group.medicine_name}</Text>

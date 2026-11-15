@@ -645,3 +645,79 @@ export function generateAppointmentCancelledForDoctorEmail({
 '</td></tr></table>' +
 '</body></html>';
 }
+
+export function generatePayoutRequestAdminEmail({
+  recipientName,
+  doctorName,
+  doctorEmail,
+  amount,
+  payoutFee,
+  netAmount,
+  payoutRequestId,
+  payoutMethod,
+  accountHolderName,
+  accountNumber,
+  ifscCode,
+  bankName,
+  upiId,
+  requestedAt,
+  adminUrl,
+}: {
+  recipientName: string;
+  doctorName: string;
+  doctorEmail?: string | null;
+  amount: number;
+  payoutFee: number;
+  netAmount: number;
+  payoutRequestId: string;
+  payoutMethod: string;
+  accountHolderName?: string | null;
+  accountNumber?: string | null;
+  ifscCode?: string | null;
+  bankName?: string | null;
+  upiId?: string | null;
+  requestedAt: string;
+  adminUrl: string;
+}): string {
+  const payoutDetails = payoutMethod === 'upi'
+    ? '<div class="row"><span class="label">UPI ID</span><span class="value" style="font-family:monospace;">' + (upiId || '-') + '</span></div>'
+    : '<div class="row"><span class="label">Bank</span><span class="value">' + (bankName || '-') + '</span></div>' +
+      '<div class="row"><span class="label">Account Number</span><span class="value" style="font-family:monospace;">' + (accountNumber || '-') + '</span></div>' +
+      '<div class="row"><span class="label">IFSC</span><span class="value" style="font-family:monospace;">' + (ifscCode || '-') + '</span></div>';
+
+  return '<!DOCTYPE html>' +
+'<html lang="en">' +
+'<head>' +
+'<meta charset="utf-8">' +
+'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+'<style>' + COMMON_STYLES + '</style>' +
+'</head>' +
+'<body>' +
+'<table class="wrapper"><tr><td align="center"><table class="main">' +
+'<tr><td class="header"><div class="logo">Aura<span class="logo-leaf">Sutra</span></div><h1>Payout Request</h1><p>Action required</p></td></tr>' +
+'<tr><td class="content">' +
+'<h2 class="greeting">Hello ' + recipientName + ',</h2>' +
+'<div class="admin-alert"><h4>Payout approval needed</h4><p>A doctor has requested a wallet payout. The amount is held from their wallet balance until this request is processed.</p></div>' +
+'<div class="card">' +
+'<h4 class="card-title">Request Details</h4>' +
+'<div class="row"><span class="label">Doctor</span><span class="value">' + doctorName + '</span></div>' +
+(doctorEmail ? '<div class="row"><span class="label">Email</span><span class="value">' + doctorEmail + '</span></div>' : '') +
+'<div class="row"><span class="label">Requested Amount</span><span class="value" style="font-size:20px;font-weight:800;color:#047857;">&#x20B9;' + amount.toFixed(2) + '</span></div>' +
+'<div class="row"><span class="label">Processing Fee</span><span class="value">&#x20B9;' + payoutFee.toFixed(2) + '</span></div>' +
+'<div class="row"><span class="label">Net Payout</span><span class="value" style="font-weight:800;">&#x20B9;' + netAmount.toFixed(2) + '</span></div>' +
+'<div class="row"><span class="label">Request ID</span><span class="value" style="font-family:monospace;">' + payoutRequestId + '</span></div>' +
+'<div class="row"><span class="label">Method</span><span class="value">' + payoutMethod.toUpperCase() + '</span></div>' +
+'<div class="row"><span class="label">Requested At</span><span class="value">' + requestedAt + '</span></div>' +
+'</div>' +
+'<div class="bank-details">' +
+'<h4 class="card-title">Payout Destination</h4>' +
+'<div class="row"><span class="label">Account Holder</span><span class="value">' + (accountHolderName || '-') + '</span></div>' +
+payoutDetails +
+'</div>' +
+'<div class="button-container"><a class="button" href="' + adminUrl + '">Review in Admin Panel</a></div>' +
+'<p class="text" style="font-size:13px;color:#94a3b8;">Process the transfer, then mark this request as processed or rejected in the admin panel.</p>' +
+'</td></tr></table>' +
+'<div class="footer"><p>AuraSutra Healthcare Platform</p><p>This is an automated message, please do not reply.</p></div>' +
+'</td></tr></table>' +
+'</body></html>';
+}

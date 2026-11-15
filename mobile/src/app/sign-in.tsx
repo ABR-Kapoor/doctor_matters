@@ -1,10 +1,28 @@
-import { COLORS, FONTS } from '../constants/theme';
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, ImageBackground, useColorScheme, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  Image,
+  ImageBackground,
+  useColorScheme,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useClerk } from '@clerk/expo';
+import { useAuth, useClerk } from '@clerk/expo';
 import { useRouter } from 'expo-router';
+import { Eye, EyeOff } from 'lucide-react-native';
+import { COLORS, FONTS } from '../constants/theme';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
+import { AuthBadge } from '../components/AuthBadge';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
+import { OtpInput } from '../components/OtpInput';
 
 type SignInResource = NonNullable<ReturnType<typeof useClerk>['client']['signIn']>;
 
@@ -15,18 +33,23 @@ const describeError = (err: unknown): string => {
 };
 
 export default function SignInScreen() {
+  const { isLoaded } = useAuth();
   const clerk = useClerk();
   const router = useRouter();
   const colorScheme = useColorScheme();
 
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  
+
   const [needsTrustCode, setNeedsTrustCode] = useState(false);
   const [trustCode, setTrustCode] = useState('');
   const [isSecondFactor, setIsSecondFactor] = useState(false);
+
+  const signInResource = clerk.client?.signIn;
 
   const activateSession = async (signIn: SignInResource) => {
     if (signIn.status !== 'complete' || !signIn.createdSessionId) {
@@ -34,10 +57,8 @@ export default function SignInScreen() {
     }
     await clerk.setActive({ session: signIn.createdSessionId });
 
-    // Wait for the session to be active and retrieve a fresh JWT token
     let token = await clerk.session?.getToken();
     if (!token) {
-      // Small pause if session token takes a moment to be available after setActive
       await new Promise((resolve) => setTimeout(resolve, 300));
       token = await clerk.session?.getToken();
     }
@@ -59,7 +80,7 @@ export default function SignInScreen() {
   };
 
   const onVerifyTrustPress = async () => {
-    const signIn = clerk.client.signIn;
+    const signIn = clerk.client?.signIn;
     if (!signIn) return;
 
     const code = trustCode.trim();
@@ -86,7 +107,7 @@ export default function SignInScreen() {
     }
   };
 
-  const onBackToSignIn = async () => {
+  const onBackToSignIn = () => {
     setNeedsTrustCode(false);
     setIsSecondFactor(false);
     setTrustCode('');
@@ -94,9 +115,18 @@ export default function SignInScreen() {
   };
 
   const onSignInPress = async () => {
-    const signIn = clerk.client.signIn;
+    const signIn = clerk.client?.signIn;
     if (!signIn) {
       Alert.alert('Loading Error', 'Clerk client not fully loaded. Try restarting the app.');
+      return;
+    }
+
+    if (!emailAddress.trim()) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+    if (!password) {
+      setErrorMessage('Please enter your password.');
       return;
     }
 
@@ -117,8 +147,6 @@ export default function SignInScreen() {
         return;
       }
 
-      // Device trust is always satisfied by a SECOND factor email code. `supportedSecondFactors`
-      // can be empty here, so `signIn.status` is the only reliable signal.
       if (attempt.status === 'needs_client_trust' || attempt.status === 'needs_second_factor') {
         const factor = attempt.supportedSecondFactors?.find((f) => f.strategy === 'email_code');
         await attempt.prepareSecondFactor({
@@ -152,162 +180,329 @@ export default function SignInScreen() {
     }
   };
 
-  if (needsTrustCode) {
-    return (
-      <ImageBackground source={require('../../assets/images/auth_bg.jpg')} style={styles.container} resizeMode="cover">
-      <SafeAreaView style={{ flex: 1 }}>
-
-        <View style={styles.content}>
-        <View style={styles.logoContainer}>
-          <View style={{ position: 'relative' }}>
-            <Image 
-              source={colorScheme === 'dark' ? require('../../assets/images/AuraSutra-Full-WhiteText-Transparent.png') : require('../../assets/images/AuraSutra-Full_BlackText-Transparent.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={{ position: 'absolute', bottom: -10, right: 10, fontSize: 32, color: COLORS.text, fontStyle: 'italic', fontFamily: 'DMSans_700Bold' }}>
-              Sarthi
-            </Text>
-          </View>
-        </View>
-          <Text style={styles.title}>Device Verification</Text>
-          <Text style={styles.subtitle}>A verification code has been sent to your email address. Please enter it below to continue.</Text>
-
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              value={trustCode}
-              placeholder="Enter verification code..."
-              onChangeText={setTrustCode}
-              style={styles.input}
-              placeholderTextColor="#9ca3af"
-              keyboardType="number-pad"
-            />
-          </View>
-
-          <TouchableOpacity style={[styles.button, loading && { opacity: 0.7 }]} onPress={onVerifyTrustPress} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify Code</Text>}
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.linkButton} onPress={onBackToSignIn}>
-            <Text style={styles.linkText}>Back to Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      
-      </SafeAreaView>
-    </ImageBackground>
-    );
-  }
+  const handleGoogleSuccess = async (sessionId: string) => {
+    let token = await clerk.session?.getToken();
+    if (!token) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      token = await clerk.session?.getToken();
+    }
+    try {
+      const res = await fetchWithAuth('/api/sync-user', token);
+      if (res.status === 403) {
+        await clerk.signOut();
+        Alert.alert('Patient Account Detected', 'This account is registered as a patient. Please use the Patient app to sign in.');
+        return;
+      }
+    } catch (err) {
+      console.warn('[google-signin-doctor] sync warning:', err);
+    }
+    router.replace('/(dashboard)');
+  };
 
   return (
-    <ImageBackground source={require('../../assets/images/auth_bg.jpg')} style={styles.container} resizeMode="cover">
+    <ImageBackground
+      source={require('../../assets/images/auth_bg.jpg')}
+      style={styles.container}
+      resizeMode="cover"
+    >
       <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {needsTrustCode ? (
+              <>
+                {/* 3D Key Icon Badge for device trust OTP (Blue) */}
+                <AuthBadge type="key" theme="doctor" size={100} />
 
-      <View style={styles.content}>
-        <View style={styles.logoContainer}>
-          <View style={{ position: 'relative' }}>
-            <Image 
-              source={colorScheme === 'dark' ? require('../../assets/images/AuraSutra-Full-WhiteText-Transparent.png') : require('../../assets/images/AuraSutra-Full_BlackText-Transparent.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={{ position: 'absolute', bottom: -10, right: 10, fontSize: 32, color: COLORS.text, fontStyle: 'italic', fontFamily: 'DMSans_700Bold' }}>
-              Sarthi
+                <Text style={styles.title}>Enter OTP</Text>
+                <Text style={styles.subtitle}>
+                  Enter the verification code sent to your email to verify this device.
+                </Text>
+
+                {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+                <OtpInput
+                  length={6}
+                  value={trustCode}
+                  onChange={setTrustCode}
+                  theme="doctor"
+                />
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, loading && { opacity: 0.7 }]}
+                  onPress={onVerifyTrustPress}
+                  disabled={loading}
+                  activeOpacity={0.9}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Continue</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{ marginTop: 24, alignItems: 'center' }}
+                  onPress={onBackToSignIn}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.bottomLinkText}>Back to Sign In</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* 3D Login Icon Badge (Blue) */}
+                <AuthBadge type="login" theme="doctor" size={100} />
+
+                <Text style={styles.title}>Welcome back</Text>
+                <Text style={styles.subtitle}>Sign in to securely access your doctor dashboard</Text>
+
+                {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+                {/* Email Input */}
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    value={emailAddress}
+                    placeholder="Enter your email"
+                    placeholderTextColor="#9CA3AF"
+                    onChangeText={setEmailAddress}
+                    style={styles.input}
+                  />
+                </View>
+
+                {/* Password Input */}
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    value={password}
+                    placeholder="Enter your password"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry={!showPassword}
+                    onChangeText={setPassword}
+                    style={styles.input}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeIcon}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={20} color="#9CA3AF" />
+                    ) : (
+                      <Eye size={20} color="#9CA3AF" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Forgot Password Link */}
+                <TouchableOpacity
+                  style={{ alignSelf: 'flex-end', marginBottom: 16 }}
+                  onPress={() => router.push('/forgot-password')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+
+                {/* Sign In CTA Button (Blue) */}
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    (!isLoaded || !signInResource || loading) && { opacity: 0.7 },
+                  ]}
+                  onPress={onSignInPress}
+                  disabled={!isLoaded || !signInResource || loading}
+                  activeOpacity={0.9}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>
+                      {isLoaded && signInResource ? 'Sign in' : 'Loading...'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Divider */}
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>Or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* Google Sign In Button */}
+                <GoogleSignInButton
+                  label="Continue with Google"
+                  scheme="aurasutradoctor"
+                  onSuccess={handleGoogleSuccess}
+                  onError={(err) => {
+                    const msg = err?.errors?.[0]?.message || 'Google sign in was cancelled or failed';
+                    setErrorMessage(msg);
+                  }}
+                />
+
+                {/* Bottom Sign Up Link */}
+                <TouchableOpacity
+                  style={styles.bottomLink}
+                  onPress={() => router.push('/sign-up')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.bottomLinkText}>
+                    Don't have an account?{' '}
+                    <Text style={styles.bottomLinkHighlight}>Sign up</Text>
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <View nativeID="clerk-captcha" />
+          </ScrollView>
+
+          {/* Footer Brand pinned to bottom */}
+          <View style={styles.bottomFooterContainer}>
+            <Text style={styles.footerBrandText}>
+              An <Text style={styles.frequnSyncText}>FrequnSync</Text> Product
             </Text>
           </View>
-        </View>
-        <Text style={styles.title}>Join as Sarthi</Text>
-        <Text style={styles.subtitle}>Log in to manage your practice and connect with patients.</Text>
-
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-        <View style={styles.inputContainer}>
-          <TextInput
-            autoCapitalize="none"
-            value={emailAddress}
-            placeholder="Email..."
-            onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-            style={styles.input}
-            placeholderTextColor="#9ca3af"
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={password}
-            placeholder="Password..."
-            secureTextEntry={true}
-            onChangeText={(password) => setPassword(password)}
-            style={styles.input}
-            placeholderTextColor="#9ca3af"
-          />
-        </View>
-
-        <TouchableOpacity 
-          style={{ alignSelf: 'flex-end', marginBottom: 16 }}
-          onPress={() => router.push('/forgot-password')}
-        >
-          <Text style={{ color: '#64748b', fontFamily: FONTS.medium, fontSize: 14 }}>Forgot Password?</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.button, loading && { opacity: 0.7 }]} 
-          onPress={onSignInPress} 
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.linkButton} 
-          onPress={() => router.push('/sign-up')} 
-        >
-          <Text style={styles.linkText}>Don't have an account? <Text style={styles.linkTextBold}>Sign Up</Text></Text>
-        </TouchableOpacity>
-        
-        {/* Required for sign-in flows on Expo web. Clerk skips the browser CAPTCHA on iOS and Android */}
-        <View nativeID="clerk-captcha" />
-      </View>
-    
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  logoContainer: { alignItems: 'center', marginBottom: 24, marginTop: -20 },
-  logo: { width: 290, height: 78 },
-  container: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: 14, paddingVertical: 8, justifyContent: 'center' },
-  title: { fontSize: 28, fontFamily: FONTS.serif,  color: COLORS.text, marginBottom: 0, textAlign: 'center' },
-  subtitle: { fontSize: 14, fontFamily: FONTS.regular, fontWeight: '400', color: COLORS.gray, marginBottom: 40, textAlign: 'center', lineHeight: 22 },
-  errorText: { color: COLORS.tertiary, marginBottom: 16, textAlign: 'center', fontFamily: FONTS.medium, fontWeight: '500' },
-  verifyText: { color: COLORS.text, marginBottom: 24, textAlign: 'center', lineHeight: 22, fontFamily: FONTS.regular, fontWeight: '400' },
-  inputContainer: { 
-    backgroundColor: COLORS.white, 
-    borderRadius: 12, 
-    marginBottom: 16,
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 24,
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 26,
+    fontFamily: FONTS.bold,
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  errorText: {
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 14,
+    fontFamily: FONTS.medium,
+    fontSize: 13,
+  },
+  inputContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  input: { paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, fontFamily: FONTS.regular, fontWeight: '400', color: COLORS.text },
-  button: {
-    backgroundColor: COLORS.text,
-    paddingVertical: 12,
+  input: {
+    flex: 1,
+    height: '100%',
+    fontSize: 15,
+    fontFamily: FONTS.regular,
+    color: '#111827',
+  },
+  eyeIcon: {
+    paddingLeft: 10,
+  },
+  forgotText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontFamily: FONTS.medium,
+  },
+  primaryButton: {
+    backgroundColor: '#5C85D9',
     borderRadius: 12,
-    alignItems: 'center', 
+    height: 50,
+    alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16, paddingHorizontal: 16, minHeight: 48 },
-  buttonText: { color: COLORS.white, fontSize: 16, fontFamily: FONTS.bold, fontWeight: '700' , },
-  linkButton: { marginTop: 32, alignItems: 'center' , },
-  linkText: { color: COLORS.gray, fontSize: 14, fontFamily: FONTS.medium, fontWeight: '500' },
-  linkTextBold: { color: COLORS.text, fontFamily: FONTS.bold, fontWeight: '700' },
+    marginTop: 6,
+    shadowColor: '#5C85D9',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: FONTS.bold,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    marginHorizontal: 14,
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: '#9CA3AF',
+  },
+  bottomLink: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  bottomLinkText: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: '#6B7280',
+  },
+  bottomLinkHighlight: {
+    fontFamily: FONTS.bold,
+    color: '#5C85D9',
+  },
+  bottomFooterContainer: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerBrandText: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: '#6B7280',
+    letterSpacing: 0.3,
+  },
+  frequnSyncText: {
+    fontFamily: FONTS.bold,
+    fontWeight: '800',
+    fontSize: 13.5,
+    color: '#2563EB',
+  },
 });
-
-
-

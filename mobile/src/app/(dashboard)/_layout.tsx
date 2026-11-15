@@ -20,6 +20,7 @@ export default function TabLayout() {
     <Tabs 
       screenOptions={{
         ...getHeaderOptions(router),
+        headerStatusBarHeight: insets.top,
         headerShown: true,
         tabBarActiveTintColor: COLORS.primary, // Text color when active
         tabBarInactiveTintColor: COLORS.gray,
@@ -71,12 +72,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="finance"
         options={{
-          title: 'Finance',
-          headerTitle: () => <HeaderTitle title="Finance" subtitle="Your Earnings & Payouts" />,
+          title: 'Wallet',
+          headerShown: false,
           tabBarIcon: ({ color, size, focused }) => (
             <Banknote color={focused ? COLORS.primary : color} size={size - 2} strokeWidth={focused ? 3 : 2} />
           ),
-          tabBarLabel: 'Finance',
+          tabBarLabel: 'Wallet',
         }}
       />
       <Tabs.Screen
@@ -100,9 +101,7 @@ export default function TabLayout() {
         name="notifications" 
         options={{ 
           href: null, 
-          title: 'Notifications',
-          headerTitleAlign: 'center',
-          headerRight: () => null,
+          headerShown: false,
         }} 
       />
       <Tabs.Screen name="explore" options={{ href: null }} />

@@ -25,18 +25,17 @@ const path = require('path');
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-const monorepoRoot = path.resolve(__dirname, '..');
+const sharedRoot = path.resolve(__dirname, 'packages', 'shared');
 config.watchFolders = [
-  path.join(monorepoRoot, 'packages', 'shared'),
+  sharedRoot,
 ];
 
 config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, 'node_modules'),
-  path.resolve(monorepoRoot, 'node_modules'),
 ];
 
 config.resolver.extraNodeModules = {
-  '@aurasutra/doctor-shared': path.resolve(monorepoRoot, 'packages', 'shared'),
+  '@aurasutra/doctor-shared': sharedRoot,
 };
 
 // Metro matches these against the project-root-relative path, so a pattern that

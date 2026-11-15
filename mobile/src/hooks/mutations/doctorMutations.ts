@@ -350,3 +350,24 @@ export function useAdminVerify() {
     }
   });
 }
+
+export function useRequestPayout() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ token, amount, notes }: { token: AuthToken; amount: number; notes?: string }) => {
+      const res = await fetchWithAuth('/api/doctor/wallet/payout-request', token, {
+        method: 'POST',
+        body: JSON.stringify({ amount, notes }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to request payout');
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['doctorWallet'] });
+    },
+  });
+}

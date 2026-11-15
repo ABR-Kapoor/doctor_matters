@@ -7,10 +7,10 @@ import { View, Text } from 'react-native';
 import { COLORS, FONTS } from '@/constants/theme';
 
 export const HeaderTitle = ({ title, subtitle }: { title: string, subtitle?: string }) => (
-  <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 8, marginVertical: 6 }}>
+  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
     <Text style={{ fontSize: 18, fontFamily: FONTS.bold, color: '#111827' }}>{title}</Text>
     {subtitle ? (
-      <Text style={{ fontSize: 12, fontFamily: FONTS.medium, color: '#6B7280', marginTop: 1 }}>{subtitle}</Text>
+      <Text style={{ fontSize: 13, fontFamily: FONTS.medium, color: '#6B7280', marginTop: 2 }}>{subtitle}</Text>
     ) : null}
   </View>
 );
@@ -25,7 +25,6 @@ export const getHeaderOptions = (router: any) => ({
   },
   headerStyle: {
     backgroundColor: '#fff',
-    height: 80,
   },
   headerLeft: (props: any) => (
     <TouchableOpacity
@@ -45,8 +44,7 @@ export const getHeaderOptions = (router: any) => ({
         backgroundColor: '#FFFFFF',
         alignItems: 'center',
         justifyContent: 'center',
-        marginLeft: 18,
-        marginVertical: 6,
+        marginLeft: 14,
       }}
     >
       <ChevronLeft size={20} color="#374151" />

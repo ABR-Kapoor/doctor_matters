@@ -30,7 +30,12 @@ function isPayoutReady(doctor: any): boolean {
     return isBankReady(doctor) || isUpiReady(doctor);
 }
 
-export function checkDoctorProfileComplete(doctor: any, user: any): ProfileCompleteness {
+export function checkDoctorProfileComplete(
+    doctor: any,
+    user: any,
+    options: { requirePayout?: boolean } = {},
+): ProfileCompleteness {
+    const requirePayout = options.requirePayout !== false;
     const requiredFields = [
         { key: 'name', label: 'Full Name', value: user?.name },
         { key: 'phone', label: 'Phone Number', value: user?.phone },
@@ -41,7 +46,9 @@ export function checkDoctorProfileComplete(doctor: any, user: any): ProfileCompl
         { key: 'consultation_fee', label: 'Consultation Fee', value: doctor?.consultation_fee > 0 },
         { key: 'city', label: 'City', value: doctor?.city },
         { key: 'state', label: 'State', value: doctor?.state },
-        { key: 'payout', label: 'Bank or UPI Details', value: isPayoutReady(doctor) },
+        ...(requirePayout
+            ? [{ key: 'payout', label: 'Bank or UPI Details', value: isPayoutReady(doctor) }]
+            : []),
     ];
 
     const missingFields: string[] = [];

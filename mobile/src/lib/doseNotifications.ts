@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { ensurePushChannel } from './notificationChannels';
 
 // Local, on-device reminders for medication doses. Scheduling is a rolling
 // window (not the whole prescription) because iOS caps scheduled local
@@ -63,12 +64,12 @@ export async function configureDoseNotifications() {
         showBadge: true,
         enableLights: true,
         bypassDnd: false,
-        sound: 'default',
         audioAttributes: {
           usage: n.AndroidAudioUsage.NOTIFICATION,
           contentType: n.AndroidAudioContentType.SONIFICATION,
         },
       });
+      await ensurePushChannel(n);
     } catch (err) {
       console.warn('[doseNotifications] failed to create channel at startup', err);
     }
@@ -92,7 +93,6 @@ export async function ensureNotificationPermission(): Promise<boolean> {
         showBadge: true,
         enableLights: true,
         bypassDnd: false,
-        sound: 'default',
         audioAttributes: {
           usage: n.AndroidAudioUsage.NOTIFICATION,
           contentType: n.AndroidAudioContentType.SONIFICATION,

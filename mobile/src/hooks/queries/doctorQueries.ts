@@ -8,6 +8,7 @@ import {
 } from '@aurasutra/doctor-shared';
 
 import type { AuthToken } from '@aurasutra/doctor-shared';
+import { checkDoctorProfileComplete } from '../../lib/profile-utils';
 
 export function useDoctorIdentity(token: AuthToken) {
   return useQuery({
@@ -251,18 +252,74 @@ export function useDoctorAppointments(uid: string | null, token: AuthToken, hasA
 export function useDoctorFinance(uid: string | null, token: AuthToken) {
   return useQuery({
     queryKey: ['doctorFinance', uid, token],
-queryFn: async () => {
-      // Any failure used to fall through to an empty object, which rendered as
-      // "profile incomplete" instead of an error. Surface it so the UI can say so.
-      const res = await fetchWithAuth('/api/doctor/finance', token);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || body.error || `Failed to load payouts (${res.status})`);
+    queryFn: async () => {
+      const [profileRes, bankRes, financeRes] = await Promise.all([
+        fetchWithAuth('/api/doctor/profile', token),
+        fetchWithAuth('/api/doctor/bank-details', token).catch(() => null),
+        fetchWithAuth('/api/doctor/finance', token).catch(() => null),
+      ]);
+
+      if (!profileRes.ok) {
+        const body = await profileRes.json().catch(() => ({}));
+        throw new Error(body.message || body.error || `Failed to load profile (${profileRes.status})`);
       }
-      const data = await res.json();
-      return data.finance || {
-        isProfileComplete: false, isVerified: false, bankDetailsAdded: false,
-        payoutMethod: 'bank', bankForm: {}, totalEarnings: 0, pendingEarnings: 0, earnings: []
+
+      const profileData = await profileRes.json();
+      const doctor = profileData.doctor;
+      const user = profileData.user;
+      const completeness = checkDoctorProfileComplete(doctor, user, { requirePayout: false });
+
+      let bankDetailsAdded = false;
+      let bankForm = {
+        accountHolderName: '', accountNumber: '', ifscCode: '',
+        bankName: '', accountType: 'savings', branchName: '', payoutUpiId: '',
+      };
+      let payoutMethod: 'bank' | 'upi' = 'bank';
+
+      try {
+        if (bankRes?.ok) {
+          const bankData = await bankRes.json();
+          if (bankData.bankDetails?.addedAt) {
+            bankDetailsAdded = true;
+            bankForm = {
+              accountHolderName: bankData.bankDetails.accountHolderName || '',
+              accountNumber: bankData.bankDetails.accountNumber || '',
+              ifscCode: bankData.bankDetails.ifscCode || '',
+              bankName: bankData.bankDetails.bankName || '',
+              accountType: bankData.bankDetails.accountType || 'savings',
+              branchName: bankData.bankDetails.branchName || '',
+              payoutUpiId: bankData.bankDetails.payoutUpiId || '',
+            };
+            payoutMethod = bankData.bankDetails.payoutMethod === 'upi' ? 'upi' : 'bank';
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      let earnings: any[] = [];
+      let totalEarnings = 0;
+      let pendingEarnings = 0;
+
+      try {
+        if (financeRes?.ok) {
+          const financeData = await financeRes.json();
+          if (financeData.success && financeData.earnings) {
+            earnings = financeData.earnings.transactions || [];
+            totalEarnings = financeData.earnings.total_doctor_earned || 0;
+            pendingEarnings = financeData.earnings.total_pending_amount || 0;
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      return {
+        uid: uid as string,
+        isProfileComplete: completeness.isComplete,
+        isVerified: Boolean(doctor?.is_verified),
+        bankDetailsAdded,
+        bankForm,
+        payoutMethod,
+        earnings,
+        totalEarnings,
+        pendingEarnings,
       };
     },
     enabled: !!token,
@@ -357,5 +414,126 @@ export function useDoctorPrescriptionStats(
   return useQuery({
     ...prescriptionStatsQueryOptions(prescriptionId || '', token, opts),
     enabled: !!prescriptionId && !!token,
+  });
+}
+
+export interface DoctorWalletFilters {
+  direction?: string;
+  category?: string;
+  status?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
+export function useDoctorWallet(
+  token: AuthToken,
+  filters: DoctorWalletFilters = {},
+  enabled = true,
+) {
+  const params = new URLSearchParams();
+  if (filters.direction) params.set('direction', filters.direction);
+  if (filters.category) params.set('category', filters.category);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.search) params.set('q', filters.search);
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  if (filters.page) params.set('page', String(filters.page));
+  if (filters.limit) params.set('limit', String(filters.limit));
+  const queryString = params.toString();
+
+  return useQuery({
+    queryKey: ['doctorWallet', token, queryString],
+    queryFn: async () => {
+      const res = await fetchWithAuth(`/api/doctor/wallet${queryString ? `?${queryString}` : ''}`, token);
+      
+      // If the dedicated wallet endpoint is not yet deployed on the backend (404),
+      // gracefully fall back to the established /api/doctor/finance endpoint so doctors
+      // can still see their balances and consultation transactions without seeing an error.
+      if (res.status === 404) {
+        try {
+          const [finRes, bankRes] = await Promise.all([
+            fetchWithAuth('/api/doctor/finance', token).catch(() => null),
+            fetchWithAuth('/api/doctor/bank-details', token).catch(() => null),
+          ]);
+
+          let earned = 0;
+          let pending = 0;
+          let rawTx: any[] = [];
+          if (finRes && finRes.ok) {
+            const finData = await finRes.json().catch(() => ({}));
+            if (finData?.earnings) {
+              earned = Number(finData.earnings.total_doctor_earned || 0);
+              pending = Number(finData.earnings.total_pending_amount || 0);
+              rawTx = finData.earnings.transactions || [];
+            }
+          }
+
+          let payoutProfile = { method: null as string | null, verified: false, ready: false };
+          if (bankRes && bankRes.ok) {
+            const bankData = await bankRes.json().catch(() => ({}));
+            const details = bankData?.bankDetails;
+            if (details) {
+              const ready = details.payoutMethod === 'upi' ? !!details.payoutUpiId : (!!details.accountNumber && !!details.ifscCode);
+              payoutProfile = {
+                method: details.payoutMethod || 'bank',
+                verified: Boolean(details.verified),
+                ready,
+              };
+            }
+          }
+
+          return {
+            success: true,
+            wallet: {
+              availableBalance: Math.max(0, earned - pending),
+              heldAmount: pending,
+              lifetimeCredited: earned,
+              lifetimeDebited: 0,
+              lifetimeWithdrawn: 0,
+              lifetimePayoutFees: 0,
+              lastTransactionAt: rawTx[0]?.created_at || null,
+            },
+            transactions: rawTx.map((t: any, idx: number) => ({
+              id: t.appointment_id || `tx-${idx}`,
+              direction: 'credit' as const,
+              category: 'consultation',
+              status: t.transfer_status === 'paid' ? 'completed' : 'pending',
+              amount: Number(t.amount || 0),
+              currency: 'INR',
+              description: t.patient_name ? `Consultation with ${t.patient_name}` : 'Patient consultation',
+              appointmentId: t.appointment_id || null,
+              patientName: t.patient_name || null,
+              referenceType: 'appointment',
+              referenceId: t.appointment_id || null,
+              createdAt: t.created_at || new Date().toISOString(),
+            })),
+            pagination: { page: 1, limit: 25, total: rawTx.length, totalPages: 1 },
+            payouts: [],
+            payoutPagination: { page: 1, limit: 10, total: 0, totalPages: 1 },
+            config: { minPayoutAmount: 100, payoutFee: 9 },
+            payoutProfile,
+          };
+        } catch {
+          // If fallback fails, fall through to error handling below
+        }
+      }
+
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Wallet service temporarily unavailable (${res.status})`);
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load wallet');
+      }
+      return data;
+    },
+    enabled: !!token && enabled,
+    staleTime: 30_000,
   });
 }
