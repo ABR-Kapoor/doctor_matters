@@ -17,7 +17,8 @@ try {
   // The native module is absent in Expo Go; the screen shows a clear message.
 }
 
-const liveKitServerUrl = process.env.EXPO_PUBLIC_LIVEKIT_URL;
+const liveKitServerUrl =
+  process.env.EXPO_PUBLIC_LIVEKIT_URL || 'wss://dev-42vzlprn.livekit.cloud';
 const roomIdForAid = (aid: unknown) => ('appointment_' + String(aid ?? '')).trim().slice(0, 64);
 
 function formatDuration(totalSeconds: number) {
