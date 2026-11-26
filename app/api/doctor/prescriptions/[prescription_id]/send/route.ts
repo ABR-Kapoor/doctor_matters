@@ -1,42 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { requireDoctor, requireOwnPrescription } from '@/lib/authz';
+import { notifyOnce, PATIENT_PUSH_CHANNEL } from '@/lib/shared/notifications/inApp';
 
 /**
  * Notifies the patient backend that the (now delivered) prescription exists.
- *
- * This previously lived in the create route, which fired it while the
- * prescription was still a draft the patient cannot see. Now that create→draft
- * and send→delivered are two steps, the notification fires here — after the
- * sent_to_patient UPDATE succeeds. It targets the patient backend explicitly
- * (PATIENT_API_URL) and authenticates as a service, because there is no user
- * session on an inter-backend hop. All failures are swallowed: a notification
- * problem must never fail the send itself.
+ * If the service hop is unavailable, directly delivers in-app and Expo push notifications.
  */
-async function notifyPatientPrescription(payload: Record<string, unknown>): Promise<void> {
+async function notifyPatientPrescription(
+    payload: Record<string, unknown>,
+    prescriptionId: string,
+    patientPid: string,
+    doctorDid: string,
+): Promise<void> {
     const patientApi = process.env.PATIENT_API_URL;
     const serviceSecret = process.env.INTERNAL_SERVICE_SECRET;
+    let delivered = false;
 
-    if (!patientApi || !serviceSecret) {
-        console.warn('[send] PATIENT_API_URL or INTERNAL_SERVICE_SECRET unset; patient notification skipped');
-        return;
+    if (patientApi && serviceSecret) {
+        try {
+            const res = await fetch(`${patientApi.replace(/\/$/, '')}/api/notifications/send`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-service-secret': serviceSecret,
+                },
+                body: JSON.stringify(payload),
+                signal: AbortSignal.timeout(8000),
+            });
+
+            if (res.ok) {
+                delivered = true;
+            } else {
+                console.warn(`[send] patient notification service hop failed (${res.status}), trying direct push`);
+            }
+        } catch (err) {
+            console.warn('[send] patient notification service error, trying direct push:', err);
+        }
     }
 
-    try {
-        const res = await fetch(`${patientApi.replace(/\/$/, '')}/api/notifications/send`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-service-secret': serviceSecret,
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-            console.error(`[send] patient notification failed: ${res.status} ${await res.text().catch(() => '')}`);
+    if (!delivered) {
+        try {
+            const [pt] = await sql`SELECT uid FROM patients WHERE pid = ${patientPid} LIMIT 1`;
+            const [doc] = await sql`
+                SELECT u.name, u.profile_image_url 
+                FROM doctors d JOIN users u ON d.uid = u.uid 
+                WHERE d.did = ${doctorDid} LIMIT 1
+            `;
+            if (pt?.uid) {
+                const docName = doc?.name ? `Dr. ${doc.name.replace(/^Dr\.?\s+/i, '')}` : 'Your doctor';
+                await notifyOnce({
+                    uid: pt.uid,
+                    title: 'New Prescription Received',
+                    body: `${docName} has sent you a new prescription with medications and instructions.`,
+                    type: 'prescription',
+                    actionUrl: '/dashboard/prescriptions',
+                    eventKey: `prescription:${prescriptionId}:sent`,
+                    metadata: {
+                        prescription_id: prescriptionId,
+                        did: doctorDid,
+                        pid: patientPid,
+                        doctor_name: docName,
+                        image_url: doc?.profile_image_url || null,
+                    },
+                    pushChannelId: PATIENT_PUSH_CHANNEL,
+                });
+            }
+        } catch (directErr) {
+            console.error('[send] direct prescription push error:', directErr);
         }
-    } catch (err) {
-        console.error('[send] patient notification error:', err);
     }
 }
 
@@ -181,10 +213,15 @@ export async function POST(request: NextRequest, { params }: { params: { prescri
         console.log(`[Send] Prescription ${prescription_id} sent. Generated ${insertedCount} adherence records.`);
 
         // Fire only now: the prescription just became visible to the patient.
-        await notifyPatientPrescription({
-            type: 'prescription_created',
-            data: { patientId: pid, doctorId: did, diagnosis: data.diagnosis, medicines, instructions: data.instructions },
-        });
+        await notifyPatientPrescription(
+            {
+                type: 'prescription_created',
+                data: { patientId: pid, doctorId: did, diagnosis: data.diagnosis, medicines, instructions: data.instructions },
+            },
+            prescription_id,
+            pid,
+            did,
+        );
 
         return NextResponse.json({
             success: true,

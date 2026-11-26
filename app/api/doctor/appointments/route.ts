@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { requireDoctor, requireOwnAppointment } from '@/lib/authz';
 import { closeOpenCallForAppointment, hasOpenCallForAppointment } from '@/lib/callSessions';
+import { notifyOnce, PATIENT_PUSH_CHANNEL, DOCTOR_PUSH_CHANNEL } from '@/lib/shared/notifications/inApp';
 
 /**
  * Delegates patient/doctor in-app notification creation and Expo push to the
@@ -257,35 +258,27 @@ export async function PATCH(request: NextRequest) {
                     };
 
                     if (pt?.patient_uid) {
-                        await sql`
-                            INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                            VALUES (
-                                ${pt.patient_uid},
-                                'Visit Mode Updated',
-                                ${ptMsg},
-                                'appointment',
-                                false,
-                                ${sql.json(patientMeta)}
-                            )
-                            ON CONFLICT (uid, ((metadata ->> 'event_key')))
-                                WHERE metadata ? 'event_key'
-                            DO NOTHING
-                        `;
+                        await notifyOnce({
+                            uid: pt.patient_uid,
+                            title: 'Visit Mode Updated',
+                            body: ptMsg,
+                            type: 'appointment',
+                            actionUrl: '/dashboard/appointments',
+                            eventKey: patientEventKey,
+                            metadata: patientMeta,
+                            pushChannelId: PATIENT_PUSH_CHANNEL,
+                        }).catch((err) => console.error('[Push] Mode update push to patient failed:', err));
                     }
-                    await sql`
-                        INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                        VALUES (
-                            ${auth.data.uid},
-                            'Visit Mode Updated',
-                            ${docMsg},
-                            'appointment',
-                            false,
-                            ${sql.json(doctorMeta)}
-                        )
-                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
-                            WHERE metadata ? 'event_key'
-                        DO NOTHING
-                    `;
+                    await notifyOnce({
+                        uid: auth.data.uid,
+                        title: 'Visit Mode Updated',
+                        body: docMsg,
+                        type: 'appointment',
+                        actionUrl: '/dashboard',
+                        eventKey: doctorEventKey,
+                        metadata: doctorMeta,
+                        pushChannelId: DOCTOR_PUSH_CHANNEL,
+                    }).catch((err) => console.error('[Push] Mode update push to doctor failed:', err));
                 } catch (notifErr) {
                     console.error('Mode change notification error:', notifErr);
                 }
@@ -440,23 +433,29 @@ export async function PATCH(request: NextRequest) {
                 }
 
                 if (patientTitle && pt?.patient_uid) {
-                    await sql`
-                        INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                        VALUES (${pt.patient_uid}, ${patientTitle}, ${patientBody}, 'appointment', false, ${sql.json(patientMeta)})
-                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
-                            WHERE metadata ? 'event_key'
-                        DO NOTHING
-                    `;
+                    await notifyOnce({
+                        uid: pt.patient_uid,
+                        title: patientTitle,
+                        body: patientBody,
+                        type: 'appointment',
+                        actionUrl: '/dashboard/appointments',
+                        eventKey: patientEventKey,
+                        metadata: patientMeta,
+                        pushChannelId: PATIENT_PUSH_CHANNEL,
+                    }).catch((err) => console.error('[Push] Appointment status push to patient failed:', err));
                 }
 
                 if (doctorTitle) {
-                    await sql`
-                        INSERT INTO notifications (uid, title, body, type, is_read, metadata)
-                        VALUES (${auth.data.uid}, ${doctorTitle}, ${doctorBody}, 'appointment', false, ${sql.json(doctorMeta)})
-                        ON CONFLICT (uid, ((metadata ->> 'event_key')))
-                            WHERE metadata ? 'event_key'
-                        DO NOTHING
-                    `;
+                    await notifyOnce({
+                        uid: auth.data.uid,
+                        title: doctorTitle,
+                        body: doctorBody,
+                        type: 'appointment',
+                        actionUrl: '/dashboard',
+                        eventKey: doctorEventKey,
+                        metadata: doctorMeta,
+                        pushChannelId: DOCTOR_PUSH_CHANNEL,
+                    }).catch((err) => console.error('[Push] Appointment status push to doctor failed:', err));
                 }
             } catch (notifErr) {
                 console.error('Failed to record doctor appointment status notification:', notifErr);

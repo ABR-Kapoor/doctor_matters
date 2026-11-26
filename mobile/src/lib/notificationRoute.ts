@@ -1,12 +1,29 @@
 import type { Href } from 'expo-router';
 
 /**
- * Notification rows use the web action URLs (`/dashboard/...`). Doctor mobile
- * screens live at the same paths inside the dashboard group, except for the
- * dashboard root itself.
+ * Maps notification payloads (URLs or data types) to their matching mobile screens.
  */
-export function toMobileNotificationHref(url?: string | null): Href | null {
-  if (!url) return null;
+export function toMobileNotificationHref(
+  url?: string | null,
+  data?: Record<string, any> | null,
+): Href | null {
+  // If video call notification with appointment ID
+  if (data?.type === 'video_call' && data?.aid) {
+    return `/video-call/${data.aid}` as Href;
+  }
+
+  if (data?.type === 'prescription') {
+    return '/(dashboard)/prescriptions' as Href;
+  }
+
+  if (data?.type === 'payment' || data?.type === 'wallet' || data?.type === 'payout') {
+    return '/(dashboard)/finance' as Href;
+  }
+
+  if (!url) {
+    if (data?.type === 'appointment') return '/(dashboard)' as Href;
+    return '/(dashboard)/notifications' as Href;
+  }
 
   const trimmed = url.trim();
   if (!trimmed) return null;
