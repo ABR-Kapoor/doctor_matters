@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, StatusBar, StyleSheet, Text, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
-import { CheckCircle2, FileText, PhoneOff, X, Check, VideoOff } from 'lucide-react-native';
+import { CheckCircle2, FileText, PhoneOff, X, Check, VideoOff, Volume2 } from 'lucide-react-native';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { useDoctorIdentity } from '@/hooks/queries/doctorQueries';
 import { callTerminalMessage, useCall } from '@/components/CallProvider';
@@ -57,6 +57,14 @@ export default function DoctorVideoCallScreen() {
   useEffect(() => {
     if (callActive && !wasLiveRef.current) wasLiveRef.current = true;
   }, [callActive]);
+
+  useEffect(() => {
+    if (waiting && !callEnded && !fatalError) {
+      void callSoundService.startWaitingRing();
+    } else if (!waiting || callEnded) {
+      void callSoundService.stopWaitingRing();
+    }
+  }, [callEnded, fatalError, waiting]);
 
   useEffect(() => {
     if (initialized && !currentSession && wasLiveRef.current && !callEnded) {
@@ -357,6 +365,10 @@ export default function DoctorVideoCallScreen() {
           ) : waiting ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={COLORS.primary} />
+              <View style={styles.waitingBadge}>
+                <Volume2 size={16} color={COLORS.primary} />
+                <Text style={styles.waitingBadgeText}>Ringing patient's phone...</Text>
+              </View>
               <Text style={styles.loadingText}>Waiting for the patient to answer...</Text>
             </View>
           ) : callActive && !liveToken ? (
@@ -426,7 +438,23 @@ const styles = StyleSheet.create({
     zIndex: 10,
     padding: 24,
   },
-  loadingText: { color: COLORS.gray, marginTop: 16, fontSize: 14, fontFamily: FONTS.regular, fontWeight: '400' },
+  loadingText: { color: COLORS.gray, marginTop: 12, fontSize: 14, fontFamily: FONTS.regular, fontWeight: '400' },
+  waitingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 16,
+  },
+  waitingBadgeText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    fontWeight: '600',
+  },
   errorContainer: {
     position: 'absolute',
     top: 0,
