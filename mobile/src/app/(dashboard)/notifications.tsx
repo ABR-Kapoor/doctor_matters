@@ -19,7 +19,8 @@ const formatTime = (value?: string | null) => {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const isCurrentYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, isCurrentYear ? { month: 'short', day: 'numeric' } : { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 export default function NotificationsPage() {
@@ -179,7 +180,7 @@ export default function NotificationsPage() {
                 <Text style={[styles.notificationTitle, !notification.is_read && styles.unreadText]} numberOfLines={2}>
                   {notification.title || 'Notification'}
                 </Text>
-                <Text style={styles.notificationMessage} numberOfLines={2}>
+                <Text style={styles.notificationMessage} numberOfLines={3}>
                   {notification.body || notification.message || 'No details provided'}
                 </Text>
               </View>
@@ -387,12 +388,12 @@ const styles = StyleSheet.create({
   },
   
   notificationContent: { flex: 1, justifyContent: 'center', paddingRight: 8 },
-  notificationTitle: { fontSize: 16, fontFamily: FONTS.medium, color: COLORS.text, marginBottom: 4 },
-  unreadText: { fontFamily: FONTS.bold },
-  notificationMessage: { fontSize: 14, color: COLORS.gray, fontFamily: FONTS.regular, lineHeight: 20 },
+  notificationTitle: { fontSize: 15, fontFamily: FONTS.medium, color: COLORS.text, marginBottom: 3, lineHeight: 20 },
+  unreadText: { fontFamily: FONTS.bold, fontWeight: '700' },
+  notificationMessage: { fontSize: 13, color: COLORS.gray, fontFamily: FONTS.regular, lineHeight: 18 },
   
-  rightSide: { alignItems: 'flex-end', justifyContent: 'space-between', minHeight: 56 },
-  notificationTime: { fontSize: 12, color: COLORS.gray, fontFamily: FONTS.regular },
+  rightSide: { alignItems: 'flex-end', justifyContent: 'space-between', minHeight: 52, paddingLeft: 4 },
+  notificationTime: { fontSize: 11, color: COLORS.gray, fontFamily: FONTS.regular },
   statusIcon: { marginTop: 'auto', marginBottom: 2 },
 
   // Notification Detail Modal

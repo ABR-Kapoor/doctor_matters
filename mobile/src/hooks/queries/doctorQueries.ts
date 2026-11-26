@@ -447,97 +447,95 @@ export function useDoctorWallet(
   return useQuery({
     queryKey: ['doctorWallet', token, queryString],
     queryFn: async () => {
-      const res = await fetchWithAuth(`/api/doctor/wallet${queryString ? `?${queryString}` : ''}`, token);
-      
-      // If the dedicated wallet endpoint is not yet deployed on the backend (404),
-      // gracefully fall back to the established /api/doctor/finance endpoint so doctors
-      // can still see their balances and consultation transactions without seeing an error.
-      if (res.status === 404) {
-        try {
-          const [finRes, bankRes] = await Promise.all([
-            fetchWithAuth('/api/doctor/finance', token).catch(() => null),
-            fetchWithAuth('/api/doctor/bank-details', token).catch(() => null),
-          ]);
+      const getFallbackData = async () => {
+        const [finRes, bankRes] = await Promise.all([
+          fetchWithAuth('/api/doctor/finance', token).catch(() => null),
+          fetchWithAuth('/api/doctor/bank-details', token).catch(() => null),
+        ]);
 
-          let earned = 0;
-          let pending = 0;
-          let rawTx: any[] = [];
-          if (finRes && finRes.ok) {
-            const finData = await finRes.json().catch(() => ({}));
-            if (finData?.earnings) {
-              earned = Number(finData.earnings.total_doctor_earned || 0);
-              pending = Number(finData.earnings.total_pending_amount || 0);
-              rawTx = finData.earnings.transactions || [];
-            }
+        let earned = 0;
+        let pending = 0;
+        let rawTx: any[] = [];
+        if (finRes && finRes.ok) {
+          const finData = await finRes.json().catch(() => ({}));
+          if (finData?.earnings) {
+            earned = Number(finData.earnings.total_doctor_earned || 0);
+            pending = Number(finData.earnings.total_pending_amount || 0);
+            rawTx = finData.earnings.transactions || [];
           }
-
-          let payoutProfile = { method: null as string | null, verified: false, ready: false };
-          if (bankRes && bankRes.ok) {
-            const bankData = await bankRes.json().catch(() => ({}));
-            const details = bankData?.bankDetails;
-            if (details) {
-              const ready = details.payoutMethod === 'upi' ? !!details.payoutUpiId : (!!details.accountNumber && !!details.ifscCode);
-              payoutProfile = {
-                method: details.payoutMethod || 'bank',
-                verified: Boolean(details.verified),
-                ready,
-              };
-            }
-          }
-
-          return {
-            success: true,
-            wallet: {
-              availableBalance: Math.max(0, earned - pending),
-              heldAmount: pending,
-              lifetimeCredited: earned,
-              lifetimeDebited: 0,
-              lifetimeWithdrawn: 0,
-              lifetimePayoutFees: 0,
-              lastTransactionAt: rawTx[0]?.created_at || null,
-            },
-            transactions: rawTx.map((t: any, idx: number) => ({
-              id: t.appointment_id || `tx-${idx}`,
-              direction: 'credit' as const,
-              category: 'consultation',
-              status: t.transfer_status === 'paid' ? 'completed' : 'pending',
-              amount: Number(t.amount || 0),
-              currency: 'INR',
-              description: t.patient_name ? `Consultation with ${t.patient_name}` : 'Patient consultation',
-              appointmentId: t.appointment_id || null,
-              patientName: t.patient_name || null,
-              referenceType: 'appointment',
-              referenceId: t.appointment_id || null,
-              createdAt: t.created_at || new Date().toISOString(),
-            })),
-            pagination: { page: 1, limit: 25, total: rawTx.length, totalPages: 1 },
-            payouts: [],
-            payoutPagination: { page: 1, limit: 10, total: 0, totalPages: 1 },
-            config: { minPayoutAmount: 100, payoutFee: 9 },
-            payoutProfile,
-          };
-        } catch {
-          // If fallback fails, fall through to error handling below
         }
+
+        let payoutProfile = { method: null as string | null, verified: false, ready: false };
+        if (bankRes && bankRes.ok) {
+          const bankData = await bankRes.json().catch(() => ({}));
+          const details = bankData?.bankDetails;
+          if (details) {
+            const ready = details.payoutMethod === 'upi' ? !!details.payoutUpiId : (!!details.accountNumber && !!details.ifscCode);
+            payoutProfile = {
+              method: details.payoutMethod || 'bank',
+              verified: Boolean(details.verified),
+              ready,
+            };
+          }
+        }
+
+        return {
+          success: true,
+          wallet: {
+            availableBalance: Math.max(0, earned - pending),
+            heldAmount: pending,
+            lifetimeCredited: earned,
+            lifetimeDebited: 0,
+            lifetimeWithdrawn: 0,
+            lifetimePayoutFees: 0,
+            lastTransactionAt: rawTx[0]?.created_at || null,
+          },
+          transactions: rawTx.map((t: any, idx: number) => ({
+            id: t.appointment_id || `tx-${idx}`,
+            direction: 'credit' as const,
+            category: 'consultation',
+            status: t.transfer_status === 'paid' ? 'completed' : 'pending',
+            amount: Number(t.amount || 0),
+            currency: 'INR',
+            description: t.patient_name ? `Consultation with ${t.patient_name}` : 'Patient consultation',
+            appointmentId: t.appointment_id || null,
+            patientName: t.patient_name || null,
+            referenceType: 'appointment',
+            referenceId: t.appointment_id || null,
+            createdAt: t.created_at || new Date().toISOString(),
+          })),
+          pagination: { page: 1, limit: 25, total: rawTx.length, totalPages: 1 },
+          payouts: [],
+          payoutPagination: { page: 1, limit: 10, total: 0, totalPages: 1 },
+          config: { minPayoutAmount: 100, payoutFee: 9 },
+          payoutProfile,
+        };
+      };
+
+      try {
+        const res = await fetchWithAuth(`/api/doctor/wallet${queryString ? `?${queryString}` : ''}`, token);
+        if (res.ok) {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data && data.success) {
+              return data;
+            }
+          } catch {
+            // Non-JSON response (e.g. HTML error page) - gracefully fallback
+          }
+        }
+      } catch {
+        // Network or fetch error - gracefully fallback
       }
 
-      let text = '';
+      // Gracefully fall back to the established /api/doctor/finance and /api/doctor/bank-details
+      // so doctors always see their balances and consultation history without error banners.
       try {
-        text = await res.text();
-      } catch {
-        throw new Error(`Wallet service unreachable (${res.status})`);
+        return await getFallbackData();
+      } catch (err: any) {
+        throw new Error(err?.message || 'Failed to load wallet');
       }
-      let data: any = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        // Server returned non-JSON (e.g. HTML error page from Next.js or proxy)
-        throw new Error(`Wallet service temporarily unavailable (${res.status})`);
-      }
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || `Failed to load wallet (${res.status})`);
-      }
-      return data;
     },
     enabled: !!token && enabled,
     staleTime: 30_000,

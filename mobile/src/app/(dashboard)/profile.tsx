@@ -22,7 +22,8 @@ import {
   useSaveBankDetails, 
   useRequestVerification 
 } from '@/hooks/mutations/doctorMutations';
-import { useNotification } from '@/lib/NotificationContext';
+import { useNotification, globalShowToast } from '@/lib/NotificationContext';
+const Toast = { show: (opts: any) => { globalShowToast && globalShowToast(opts.text1, opts.text2, opts.type || 'info'); } };
 import { COLORS as THEME_COLORS } from '@/constants/theme';
 
 const COLORS = {
