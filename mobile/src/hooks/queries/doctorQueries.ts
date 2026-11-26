@@ -521,15 +521,21 @@ export function useDoctorWallet(
         }
       }
 
-      const text = await res.text();
+      let text = '';
+      try {
+        text = await res.text();
+      } catch {
+        throw new Error(`Wallet service unreachable (${res.status})`);
+      }
       let data: any = {};
       try {
         data = JSON.parse(text);
       } catch {
+        // Server returned non-JSON (e.g. HTML error page from Next.js or proxy)
         throw new Error(`Wallet service temporarily unavailable (${res.status})`);
       }
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to load wallet');
+        throw new Error(data.error || `Failed to load wallet (${res.status})`);
       }
       return data;
     },

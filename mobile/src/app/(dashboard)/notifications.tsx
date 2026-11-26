@@ -176,7 +176,7 @@ export default function NotificationsPage() {
               </View>
               
               <View style={styles.notificationContent}>
-                <Text style={[styles.notificationTitle, !notification.is_read && styles.unreadText]} numberOfLines={1}>
+                <Text style={[styles.notificationTitle, !notification.is_read && styles.unreadText]} numberOfLines={2}>
                   {notification.title || 'Notification'}
                 </Text>
                 <Text style={styles.notificationMessage} numberOfLines={2}>
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     elevation: 3, 
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.06)',
-    alignItems: 'center' 
+    alignItems: 'flex-start', 
   },
   unreadCard: { 
     backgroundColor: '#F8FAFC', 
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
   unreadText: { fontFamily: FONTS.bold },
   notificationMessage: { fontSize: 14, color: COLORS.gray, fontFamily: FONTS.regular, lineHeight: 20 },
   
-  rightSide: { alignItems: 'flex-end', justifyContent: 'space-between', height: 56 },
+  rightSide: { alignItems: 'flex-end', justifyContent: 'space-between', minHeight: 56 },
   notificationTime: { fontSize: 12, color: COLORS.gray, fontFamily: FONTS.regular },
   statusIcon: { marginTop: 'auto', marginBottom: 2 },
 
