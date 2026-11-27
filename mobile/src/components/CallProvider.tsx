@@ -8,10 +8,10 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { ActivityIndicator, AppState, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, AppState, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
-import { Loader2, Phone, PhoneOff, Video } from 'lucide-react-native';
+import { Loader2, Phone, PhoneOff, Video, Volume2 } from 'lucide-react-native';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import { callSoundService } from '../lib/callSoundService';
 import { useNotification } from '../lib/NotificationContext';

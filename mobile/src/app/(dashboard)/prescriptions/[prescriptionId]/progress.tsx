@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CheckCircle, XCircle, Clock, History, ChevronLeft } from 'lucide-react-native';
 import { MedicineIcon3D } from '@/components/MedicineIcon3D';
@@ -36,7 +36,7 @@ export default function PrescriptionProgressScreen() {
   const { prescriptionId } = useLocalSearchParams<{ prescriptionId: string }>();
   const { getToken } = useAuth();
 
-  const { data: stats, isLoading } = useDoctorPrescriptionStats(prescriptionId, getToken as any, { withDoses: true });
+  const { data: stats, isLoading, refetch, isRefetching } = useDoctorPrescriptionStats(prescriptionId, getToken as any, { withDoses: true });
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [medFilter, setMedFilter] = useState<string>('all');
   const [showAllDoses, setShowAllDoses] = useState(false);
@@ -44,9 +44,10 @@ export default function PrescriptionProgressScreen() {
   useEffect(() => {
     const interval = setInterval(() => {
       setLastUpdated(new Date());
+      void refetch();
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refetch]);
 
   if (isLoading) return <SafeAreaView style={styles.container} edges={['left', 'right']}><View style={styles.center}><ActivityIndicator size="large" color={COLORS.secondary} /></View></SafeAreaView>;
 
@@ -93,7 +94,17 @@ export default function PrescriptionProgressScreen() {
           </TouchableOpacity>
         ),
       }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={() => { void refetch(); }}
+            colors={[COLORS.secondary]}
+            tintColor={COLORS.secondary}
+          />
+        }
+      >
 
 
       <View style={styles.statsWrapper}>

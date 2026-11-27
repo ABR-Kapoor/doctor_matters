@@ -97,3 +97,25 @@ export function subscribeToPushTokenChanges(
 
   return () => subscription.remove();
 }
+
+export async function unregisterPushNotifications(
+  getToken: () => Promise<string | null>,
+): Promise<void> {
+  const notifications = Notifications;
+  if (!notifications) return;
+
+  try {
+    const project = await projectId();
+    const expoPushToken = await notifications.getExpoPushTokenAsync({
+      ...(project ? { projectId: project } : {}),
+    });
+    if (expoPushToken?.data) {
+      await fetchWithAuth('/api/doctor/push-tokens', getToken, {
+        method: 'DELETE',
+        body: JSON.stringify({ token: expoPushToken.data }),
+      }).catch(() => {});
+    }
+  } catch {
+    // non-fatal cleanup
+  }
+}

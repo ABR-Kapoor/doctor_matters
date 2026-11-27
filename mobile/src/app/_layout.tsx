@@ -73,8 +73,8 @@ function RootLayoutNav() {
   }, [getToken, isLoaded, isSignedIn]);
 
   useEffect(() => {
-    return subscribeToDoseNotificationTaps((url) => {
-      const href = toMobileNotificationHref(url);
+    return subscribeToDoseNotificationTaps((url, data) => {
+      const href = toMobileNotificationHref(url, data);
       if (href) router.push(href as any);
     });
   }, [router]);

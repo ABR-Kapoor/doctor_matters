@@ -1,7 +1,10 @@
 {
-    "name": "aurasutra-doctor",
+    "name": "aurasutra-doctor-web",
     "version": "1.0.0",
     "private": true,
+    "workspaces": [
+        "mobile"
+    ],
     "scripts": {
         "dev": "next dev -p 3001",
         "clean": "node -e \"const fs=require('fs'); if (fs.existsSync('.next')) fs.rmSync('.next', {recursive:true, force:true});\"",

@@ -53,7 +53,18 @@ export async function GET(request: NextRequest) {
         const payoutPage = Math.max(1, Number(params.get('payoutPage') || 1) || 1);
 
         const [summary, ledger, payouts, doctorRows] = await Promise.all([
-            getDoctorWalletSummary(did),
+            getDoctorWalletSummary(did).catch((err) => {
+                console.warn('getDoctorWalletSummary fallback:', err);
+                return {
+                    availableBalance: 0,
+                    heldAmount: 0,
+                    lifetimeCredited: 0,
+                    lifetimeDebited: 0,
+                    lifetimeWithdrawn: 0,
+                    lifetimePayoutFees: 0,
+                    lastTransactionAt: null,
+                };
+            }),
             listWalletTransactions(did, {
                 direction,
                 category,
@@ -63,8 +74,14 @@ export async function GET(request: NextRequest) {
                 to,
                 page,
                 limit,
+            }).catch((err) => {
+                console.warn('listWalletTransactions fallback:', err);
+                return { transactions: [], pagination: { page: 1, limit, total: 0, totalPages: 1 } };
             }),
-            listPayoutRequests(did, { page: payoutPage, limit: 10 }),
+            listPayoutRequests(did, { page: payoutPage, limit: 10 }).catch((err) => {
+                console.warn('listPayoutRequests fallback:', err);
+                return { payouts: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } };
+            }),
             sql`
                 SELECT
                     payout_method,
@@ -79,7 +96,7 @@ export async function GET(request: NextRequest) {
                 FROM doctors
                 WHERE did = ${did}
                 LIMIT 1
-            `,
+            `.catch(() => []),
         ]);
 
         const doctor = doctorRows[0];
